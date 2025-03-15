@@ -4,7 +4,8 @@ import cv2
 import numpy as np
 import base64
 import tempfile
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException , Response , Depends
+from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -12,6 +13,13 @@ from typing import Optional, Dict, Any, List
 from inference_sdk import InferenceHTTPClient, InferenceConfiguration
 import io
 import matplotlib.pyplot as plt
+import json
+import models
+import schemas
+from database import engine, get_db
+
+# Create all tables
+models.Base.metadata.create_all(bind=engine)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -29,6 +37,141 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+
+
+@app.get("/rooms/", response_model=List[schemas.Room])
+def get_rooms(db: Session = Depends(get_db)):
+    """Get all rooms"""
+    rooms = db.query(models.Room).all()
+    
+    # Convert JSON strings back to objects for each room
+    for room in rooms:
+        room.coordinates = json.loads(room.coordinates) if room.coordinates else None
+        room.grid_data = json.loads(room.grid_data) if room.grid_data else None
+        room.grid_dimensions = json.loads(room.grid_dimensions) if room.grid_dimensions else None
+        # Convert image data to base64 if present
+        if room.image_data:
+            room.image_data = "data:image/png;base64," + base64.b64encode(room.image_data).decode('utf-8')
+    
+    return rooms
+
+@app.post("/rooms/", response_model=schemas.Room)
+def create_room(room: schemas.RoomCreate, db: Session = Depends(get_db)):
+    # Generate UUID for new room if not provided
+    room_data = room.dict(exclude={'image_data'})
+    if not room_data.get('id'):
+        room_data['id'] = str(uuid.uuid4())
+    
+    # Convert objects to JSON strings for SQLite storage
+    room_data['coordinates'] = json.dumps(room_data['coordinates'])
+    room_data['grid_data'] = json.dumps(room_data['grid_data'])
+    room_data['grid_dimensions'] = json.dumps(room_data['grid_dimensions'])
+    
+    # Convert base64 image data to bytes if present
+    image_data = None
+    if room.image_data:
+        if ',' in room.image_data:
+            image_data = base64.b64decode(room.image_data.split(',')[1])
+        else:
+            image_data = base64.b64decode(room.image_data)
+
+    # Check if room exists
+    existing_room = db.query(models.Room).filter(models.Room.id == room_data['id']).first()
+    
+    if existing_room:
+        # Update existing room
+        for key, value in room_data.items():
+            setattr(existing_room, key, value)
+        if image_data is not None:
+            existing_room.image_data = image_data
+        db_room = existing_room
+    else:
+        # Create new room
+        db_room = models.Room(**room_data, image_data=image_data)
+        db.add(db_room)
+    
+    try:
+        db.commit()
+        db.refresh(db_room)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    # Convert JSON strings back to objects for response
+    db_room.coordinates = json.loads(db_room.coordinates)
+    db_room.grid_data = json.loads(db_room.grid_data)
+    db_room.grid_dimensions = json.loads(db_room.grid_dimensions)
+    if db_room.image_data:
+        db_room.image_data = "data:image/png;base64," + base64.b64encode(db_room.image_data).decode('utf-8')
+    
+    return db_room
+
+@app.put("/rooms/{room_id}", response_model=schemas.Room)
+def update_room(room_id: str, room_update: schemas.RoomUpdate, db: Session = Depends(get_db)):
+    db_room = db.query(models.Room).filter(models.Room.id == room_id).first()
+    if not db_room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    # Update grid data and dimensions
+    db_room.grid_data = json.dumps(room_update.grid_data)
+    db_room.grid_dimensions = json.dumps(room_update.grid_dimensions)
+    
+    # Update image if provided
+    if room_update.image_data:
+        if ',' in room_update.image_data:
+            db_room.image_data = base64.b64decode(room_update.image_data.split(',')[1])
+        else:
+            db_room.image_data = base64.b64decode(room_update.image_data)
+    
+    try:
+        db.commit()
+        db.refresh(db_room)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    # Convert JSON strings back to objects for response
+    db_room.grid_data = json.loads(db_room.grid_data)
+    db_room.grid_dimensions = json.loads(db_room.grid_dimensions)
+    if db_room.coordinates:
+        db_room.coordinates = json.loads(db_room.coordinates)
+    if db_room.image_data:
+        db_room.image_data = "data:image/png;base64," + base64.b64encode(db_room.image_data).decode('utf-8')
+    
+    return db_room
+
+@app.get("/rooms/{room_id}", response_model=schemas.Room)
+def get_room(room_id: str, db: Session = Depends(get_db)):
+    room = db.query(models.Room).filter(models.Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    # Convert JSON strings back to objects
+    room.coordinates = json.loads(room.coordinates) if room.coordinates else None
+    room.grid_data = json.loads(room.grid_data) if room.grid_data else None
+    room.grid_dimensions = json.loads(room.grid_dimensions) if room.grid_dimensions else None
+    # Convert image data to base64 if present
+    if room.image_data:
+        room.image_data = "data:image/png;base64," + base64.b64encode(room.image_data).decode('utf-8')
+    return room
+
+@app.get("/rooms/{room_id}/image")
+def get_room_image(room_id: str, db: Session = Depends(get_db)):
+    room = db.query(models.Room).filter(models.Room.id == room_id).first()
+    if not room or not room.image_data:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return Response(content=room.image_data, media_type="image/png")
+
+
+
+
+
+
+
+
+
+############detection part
 # Initialize Roboflow client with API key - you might want to use environment variables for this
 CLIENT = InferenceHTTPClient(
     api_url="https://detect.roboflow.com",

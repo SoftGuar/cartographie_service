@@ -8,3 +8,8 @@ matplotlib
 Pillow
 pydantic
 python-dotenv
+sqlalchemy
+python-jose
+alembic
+psycopg2-binary
+aiosqlite
