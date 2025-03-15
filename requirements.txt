@@ -13,3 +13,7 @@ python-jose
 alembic
 psycopg2-binary
 aiosqlite
+pytest
+httpx
+selenium
+webdriver-manager
