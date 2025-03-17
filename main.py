@@ -17,6 +17,7 @@ import json
 import models
 import schemas
 from database import engine, get_db
+import binascii
 
 # Create all tables
 models.Base.metadata.create_all(bind=engine)
@@ -36,6 +37,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def validate_base64(image_data: str) -> bool:
+    """Validate base64 image data"""
+    if not image_data:
+        return True
+    if ',' not in image_data:
+        return False
+    try:
+        base64.b64decode(image_data.split(',')[1])
+        return True
+    except (binascii.Error, ValueError):
+        return False
 
 
 
@@ -58,6 +71,10 @@ def get_rooms(db: Session = Depends(get_db)):
 
 @app.post("/rooms/", response_model=schemas.Room)
 def create_room(room: schemas.RoomCreate, db: Session = Depends(get_db)):
+    # Validate base64 image data
+    if room.image_data and not validate_base64(room.image_data):
+        raise HTTPException(status_code=400, detail="Invalid base64 image data")
+
     # Generate UUID for new room if not provided
     room_data = room.dict(exclude={'image_data'})
     if not room_data.get('id'):
@@ -71,10 +88,13 @@ def create_room(room: schemas.RoomCreate, db: Session = Depends(get_db)):
     # Convert base64 image data to bytes if present
     image_data = None
     if room.image_data:
-        if ',' in room.image_data:
-            image_data = base64.b64decode(room.image_data.split(',')[1])
-        else:
-            image_data = base64.b64decode(room.image_data)
+        try:
+            if ',' in room.image_data:
+                image_data = base64.b64decode(room.image_data.split(',')[1])
+            else:
+                image_data = base64.b64decode(room.image_data)
+        except binascii.Error:
+            raise HTTPException(status_code=400, detail="Invalid base64 image data")
 
     # Check if room exists
     existing_room = db.query(models.Room).filter(models.Room.id == room_data['id']).first()
@@ -109,6 +129,11 @@ def create_room(room: schemas.RoomCreate, db: Session = Depends(get_db)):
 
 @app.put("/rooms/{room_id}", response_model=schemas.Room)
 def update_room(room_id: str, room_update: schemas.RoomUpdate, db: Session = Depends(get_db)):
+    # Validate base64 image data
+    if room_update.image_data and not validate_base64(room_update.image_data):
+        raise HTTPException(status_code=400, detail="Invalid base64 image data")
+
+
     db_room = db.query(models.Room).filter(models.Room.id == room_id).first()
     if not db_room:
         raise HTTPException(status_code=404, detail="Room not found")
@@ -119,10 +144,13 @@ def update_room(room_id: str, room_update: schemas.RoomUpdate, db: Session = Dep
     
     # Update image if provided
     if room_update.image_data:
-        if ',' in room_update.image_data:
-            db_room.image_data = base64.b64decode(room_update.image_data.split(',')[1])
-        else:
-            db_room.image_data = base64.b64decode(room_update.image_data)
+        try:
+            if ',' in room_update.image_data:
+                db_room.image_data = base64.b64decode(room_update.image_data.split(',')[1])
+            else:
+                db_room.image_data = base64.b64decode(room_update.image_data)
+        except binascii.Error:
+            raise HTTPException(status_code=400, detail="Invalid base64 image data")
     
     try:
         db.commit()
