@@ -71,12 +71,12 @@ class TestIndoorMapping:
             )
             name_input.send_keys("Test Room")
             
-            building_input = self.driver.find_element(By.XPATH, "//input[@placeholder='e.g., Research Center']")
-            building_input.send_keys("Test Building")
+            # building_input = self.driver.find_element(By.XPATH, "//input[@placeholder='e.g., Research Center']")
+            # building_input.send_keys("Test Building")
             
-            floor_input = self.driver.find_element(By.XPATH, "//label[text()='Floor']/following-sibling::input")
-            floor_input.clear()
-            floor_input.send_keys("1")
+            # floor_input = self.driver.find_element(By.XPATH, "//label[text()='Floor']/following-sibling::input")
+            # floor_input.clear()
+            # floor_input.send_keys("1")
             
             # Submit form
             submit_button = self.driver.find_element(By.XPATH, "//button[text()='Create Room']")
