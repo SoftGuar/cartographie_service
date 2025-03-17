@@ -22,6 +22,7 @@ def sample_files(sample_image_data):
     """Create sample files for testing"""
     return {"file": ("test.png", io.BytesIO(sample_image_data), "image/png")}
 
+@pytest.mark.integration
 def test_process_floor_plan_basic(sample_files):
     """Test basic floor plan processing without any options"""
     response = client.post("/process_floor_plan", files=sample_files)
@@ -35,6 +36,7 @@ def test_process_floor_plan_basic(sample_files):
     assert len(result["grid_dimensions"]) == 2
 
 
+@pytest.mark.unit
 def test_process_floor_plan_invalid_image():
     """Test error handling for invalid image input"""
     invalid_data = b"not an image"
@@ -44,6 +46,8 @@ def test_process_floor_plan_invalid_image():
     assert response.status_code == 500
     assert "Error processing floor plan" in response.json()["detail"]
 
+
+@pytest.mark.integration
 def test_process_floor_plan_text_removal(sample_files):
     """Test text removal functionality specifically"""
     options = {
@@ -65,6 +69,8 @@ def test_process_floor_plan_text_removal(sample_files):
     assert "no_text_image" in result
     assert result["no_text_image"] is not None
 
+
+@pytest.mark.integration
 def test_process_floor_plan_walls_only(sample_files):
     """Test walls detection functionality specifically"""
     options = {
@@ -88,6 +94,8 @@ def test_process_floor_plan_walls_only(sample_files):
     assert "grid" in result
     assert isinstance(result["grid"], list)
 
+
+@pytest.mark.integration
 def test_process_floor_plan_furniture_only(sample_files):
     """Test furniture detection functionality specifically"""
     options = {

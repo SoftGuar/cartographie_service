@@ -41,12 +41,14 @@ def valid_room_data():
         "image_data": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
     }
 
+@pytest.mark.integration
 def test_get_rooms():
     """Test getting rooms - should return existing rooms"""
     response = client.get("/rooms/")
     assert response.status_code == 200
     assert isinstance(response.json(), list)
 
+@pytest.mark.integration
 def test_create_and_get_room(valid_room_data, cleanup_test_rooms):
     """Test creating a room and then retrieving it"""
     # Create room
@@ -63,11 +65,13 @@ def test_create_and_get_room(valid_room_data, cleanup_test_rooms):
     assert room["id"] == valid_room_data["id"]
     assert room["name"] == valid_room_data["name"]
 
+@pytest.mark.unit
 def test_get_nonexistent_room():
     """Test getting a room that doesn't exist"""
     response = client.get("/rooms/nonexistent-id-12345")
     assert response.status_code == 404
 
+@pytest.mark.integration
 def test_update_room(valid_room_data, cleanup_test_rooms):
     """Test updating a room's grid data"""
     # First create a room
@@ -87,6 +91,7 @@ def test_update_room(valid_room_data, cleanup_test_rooms):
     assert updated_room["grid_data"] == update_data["grid_data"]
     assert updated_room["grid_dimensions"] == update_data["grid_dimensions"]
 
+@pytest.mark.integration
 def test_get_multiple_rooms(valid_room_data, cleanup_test_rooms):
     """Test creating and retrieving multiple test rooms"""
     # Get initial count of test company rooms
@@ -113,6 +118,7 @@ def test_get_multiple_rooms(valid_room_data, cleanup_test_rooms):
     test_rooms = [r for r in response.json() if r["company_id"] == "test-company"]
     assert len(test_rooms) == initial_count + num_rooms
 
+@pytest.mark.integration
 def test_room_image(valid_room_data, cleanup_test_rooms):
     """Test room image endpoints"""
     # Create room with image
@@ -129,6 +135,7 @@ def test_room_image(valid_room_data, cleanup_test_rooms):
     response = client.get("/rooms/nonexistent-id-12345/image")
     assert response.status_code == 404
 
+@pytest.mark.unit
 def test_create_room_invalid_data(cleanup_test_rooms):
     """Test creating a room with invalid data"""
     invalid_data = {
@@ -140,6 +147,7 @@ def test_create_room_invalid_data(cleanup_test_rooms):
     response = client.post("/rooms/", json=invalid_data)
     assert response.status_code == 422  # Validation error
 
+@pytest.mark.integration
 def test_create_room_duplicate_id(valid_room_data, cleanup_test_rooms):
     """Test creating a room with duplicate ID"""
     # Create first room
@@ -149,7 +157,8 @@ def test_create_room_duplicate_id(valid_room_data, cleanup_test_rooms):
     # Try to create another room with same ID
     response = client.post("/rooms/", json=valid_room_data)
     assert response.status_code == 200  # Should update existing room
-    
+
+@pytest.mark.unit
 def test_update_nonexistent_room():
     """Test updating a room that doesn't exist"""
     update_data = {
@@ -160,6 +169,7 @@ def test_update_nonexistent_room():
     response = client.put("/rooms/nonexistent-id-12345", json=update_data)
     assert response.status_code == 404
 
+@pytest.mark.unit
 def test_get_room_image_invalid_base64(valid_room_data, cleanup_test_rooms):
     """Test handling invalid base64 image data"""
     # Create room with invalid base64 image data
@@ -172,6 +182,7 @@ def test_get_room_image_invalid_base64(valid_room_data, cleanup_test_rooms):
     assert response.status_code == 400
     assert "Invalid base64 image data" in response.json()["detail"]
 
+@pytest.mark.unit
 def test_update_room_invalid_base64(valid_room_data, cleanup_test_rooms):
     """Test updating a room with invalid base64 image data"""
     # First create a valid room
