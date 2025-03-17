@@ -53,7 +53,14 @@ def validate_base64(image_data: str) -> bool:
 
 
 
-@app.get("/rooms/", response_model=List[schemas.Room])
+@app.get(
+    "/rooms/",
+    response_model=List[schemas.Room],
+    tags=["Rooms"],
+    summary="Get all rooms",
+    description="Retrieve a list of all rooms in the system.",
+    response_description="List of rooms with their details, grid data, and images."
+)
 def get_rooms(db: Session = Depends(get_db)):
     """Get all rooms"""
     rooms = db.query(models.Room).all()
@@ -69,7 +76,24 @@ def get_rooms(db: Session = Depends(get_db)):
     
     return rooms
 
-@app.post("/rooms/", response_model=schemas.Room)
+@app.post(
+    "/rooms/",
+    response_model=schemas.Room,
+    tags=["Rooms"],
+    summary="Create a new room",
+    description="Create a new room with floor plan data and optional image.",
+    response_description="The created room with all its details.",
+    responses={
+        400: {
+            "description": "Invalid base64 image data",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Invalid base64 image data"}
+                }
+            }
+        }
+    }
+)
 def create_room(room: schemas.RoomCreate, db: Session = Depends(get_db)):
     # Validate base64 image data
     if room.image_data and not validate_base64(room.image_data):
@@ -127,7 +151,17 @@ def create_room(room: schemas.RoomCreate, db: Session = Depends(get_db)):
     
     return db_room
 
-@app.put("/rooms/{room_id}", response_model=schemas.Room)
+@app.put(
+    "/rooms/{room_id}",
+    response_model=schemas.Room,
+    tags=["Rooms"],
+    summary="Update a room",
+    description="Update an existing room's grid data and image.",
+    responses={
+        404: {"description": "Room not found"},
+        400: {"description": "Invalid base64 image data"}
+    }
+)
 def update_room(room_id: str, room_update: schemas.RoomUpdate, db: Session = Depends(get_db)):
     # Validate base64 image data
     if room_update.image_data and not validate_base64(room_update.image_data):
@@ -169,7 +203,14 @@ def update_room(room_id: str, room_update: schemas.RoomUpdate, db: Session = Dep
     
     return db_room
 
-@app.get("/rooms/{room_id}", response_model=schemas.Room)
+@app.get(
+    "/rooms/{room_id}",
+    response_model=schemas.Room,
+    tags=["Rooms"],
+    summary="Get a specific room",
+    description="Retrieve details of a specific room by its ID.",
+    responses={404: {"description": "Room not found"}}
+)
 def get_room(room_id: str, db: Session = Depends(get_db)):
     room = db.query(models.Room).filter(models.Room.id == room_id).first()
     if not room:
@@ -184,7 +225,19 @@ def get_room(room_id: str, db: Session = Depends(get_db)):
         room.image_data = "data:image/png;base64," + base64.b64encode(room.image_data).decode('utf-8')
     return room
 
-@app.get("/rooms/{room_id}/image")
+@app.get(
+    "/rooms/{room_id}/image",
+    tags=["Rooms"],
+    summary="Get room image",
+    description="Retrieve the floor plan image for a specific room.",
+    responses={
+        200: {
+            "content": {"image/png": {}},
+            "description": "The room's floor plan image"
+        },
+        404: {"description": "Image not found"}
+    }
+)
 def get_room_image(room_id: str, db: Session = Depends(get_db)):
     room = db.query(models.Room).filter(models.Room.id == room_id).first()
     if not room or not room.image_data:
@@ -781,7 +834,61 @@ def encode_image_to_base64(image):
     return base64.b64encode(encoded_image).decode('utf-8')
 
 # API endpoints
-@app.post("/process_floor_plan")
+@app.post(
+    "/process_floor_plan",
+    tags=["Floor Plan Processing"],
+    summary="Process a floor plan image",
+    description="""
+    Upload and process a floor plan image to detect walls, doors, and furniture.
+    
+    The processing pipeline includes:
+    1. Text removal (optional)
+    2. Wall detection
+    3. Furniture detection
+    4. Door detection
+    5. Grid conversion
+    
+    The response includes:
+    - Processed grid data
+    - Grid dimensions
+    - Intermediate processing results (if requested)
+    """,
+    responses={
+        200: {
+            "description": "Successfully processed floor plan",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "grid": [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
+                        "grid_dimensions": [3, 3],
+                        "grid_size": 4,
+                        "original_image": "base64_encoded_image",
+                        "no_text_image": "base64_encoded_image",
+                        "walls_only": "base64_encoded_image",
+                        "black_furniture": "base64_encoded_image",
+                        "grid_visual": "base64_encoded_image"
+                    }
+                }
+            }
+        },
+        400: {
+            "description": "Invalid file or options",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Invalid file format. Only PNG and JPG are supported."}
+                }
+            }
+        },
+        500: {
+            "description": "Processing error",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Error processing floor plan"}
+                }
+            }
+        }
+    }
+)
 async def api_process_floor_plan(file: UploadFile = File(...), options: Optional[str] = Form(None)):
     """
     Process a floor plan image and return the results.
