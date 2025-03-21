@@ -1,5 +1,4 @@
 from sqlalchemy import Column, Integer, String, LargeBinary, ForeignKey, Float
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -19,3 +18,4 @@ class Floor(Base):
     image_data = Column(LargeBinary, nullable=True)
     
     environment = relationship("Environment", back_populates="floors")
+    zones = relationship("Zone", back_populates="floor")
