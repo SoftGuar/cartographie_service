@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional, List, Dict
+from pydantic import BaseModel, ConfigDict
+from typing import Optional, Dict
 
 class ZoneBase(BaseModel):
     """Base schema for Zone."""
@@ -25,4 +25,4 @@ class ZoneResponse(ZoneBase):
     id: str
 
     class Config:
-        orm_mode = True 
+        model_config = ConfigDict(from_attributes=True)
