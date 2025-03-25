@@ -14,7 +14,11 @@ alembic
 psycopg2-binary
 aiosqlite
 pytest
+pytest-mock
+pytest-asyncio
 httpx
 selenium
 webdriver-manager
 pytest-cov
+uvicorn 
+requests 
