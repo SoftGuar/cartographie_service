@@ -6,7 +6,7 @@ import base64
 import uuid
 import binascii
 from models.floor import Floor
-from schemas.floor import FloorCreate, FloorUpdate, Floor
+from schemas.floor import FloorCreate, FloorUpdate, FloorResponse
 from database import get_db
 from utils.validation import validate_base64
 
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/floors", tags=["floors"])
 
 @router.get(
     "/",
-    response_model=List[Floor],
+    response_model=List[FloorResponse],
     summary="Get all floors",
     description="Retrieve a list of all floors in the system.",
     response_description="List of floors with their details, grid data, and images."
@@ -23,12 +23,11 @@ def get_floors(db: Session = Depends(get_db)):
     """Get all floors"""
     floors = db.query(Floor).all()
     
-    # Convert JSON strings back to objects for each floor
     for floor in floors:
         floor.coordinates = json.loads(floor.coordinates) if floor.coordinates else None
         floor.grid_data = json.loads(floor.grid_data) if floor.grid_data else None
         floor.grid_dimensions = json.loads(floor.grid_dimensions) if floor.grid_dimensions else None
-        # Convert image data to base64 if present
+
         if floor.image_data:
             floor.image_data = "data:image/png;base64," + base64.b64encode(floor.image_data).decode('utf-8')
     
@@ -36,7 +35,7 @@ def get_floors(db: Session = Depends(get_db)):
 
 @router.post(
     "/",
-    response_model=Floor,
+    response_model=FloorResponse,
     summary="Create a new floor",
     description="Create a new floor with floor plan data and optional image.",
     response_description="The created floor with all its details.",
@@ -110,7 +109,7 @@ def create_floor(floor: FloorCreate, db: Session = Depends(get_db)):
 
 @router.put(
     "/{floor_id}",
-    response_model=Floor,
+    response_model=FloorResponse,
     summary="Update a floor",
     description="Update an existing floor's grid data and image.",
     responses={
@@ -160,7 +159,7 @@ def update_floor(floor_id: str, floor_update: FloorUpdate, db: Session = Depends
 
 @router.get(
     "/{floor_id}",
-    response_model=Floor,
+    response_model=FloorResponse,
     summary="Get a specific floor",
     description="Retrieve details of a specific floor by its ID.",
     responses={404: {"description": "Floor not found"}}

@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import List
-from .floor import Floor
+from .floor import FloorResponse
 
 class EnvironmentBase(BaseModel):
     name: str
@@ -11,7 +11,7 @@ class EnvironmentCreate(EnvironmentBase):
 
 class Environment(EnvironmentBase):
     id: str
-    floors: List[Floor] = []
+    floors: List[FloorResponse] = []
     
     class Config:
         orm_mode = True

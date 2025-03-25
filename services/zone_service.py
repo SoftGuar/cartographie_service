@@ -1,10 +1,14 @@
 from sqlalchemy.orm import Session
 from models.zone import Zone
 from schemas.zone import ZoneCreate, ZoneUpdate
+import uuid
 
 def create_zone(db: Session, zone: ZoneCreate):
     """Create a new zone."""
-    db_zone = Zone(**zone.dict())
+    zone_data = zone.dict()
+    zone_data["id"] = str(uuid.uuid4()) 
+
+    db_zone = Zone(**zone_data)
     db.add(db_zone)
     db.commit()
     db.refresh(db_zone)
@@ -36,3 +40,22 @@ def delete_zone(db: Session, zone_id: str):
 def get_zones_by_floor(db: Session, floor_id: str):
     """Get all zones for a specific floor."""
     return db.query(Zone).filter(Zone.floor_id == floor_id).all()
+
+def validate_zone_shapes(shapes: list[dict]) -> bool:
+    """Validate the structure of zone shapes"""
+    required_fields = {
+        "polygon": ["coordinates"],
+        "rectangle": ["coordinates"], 
+        "circle": ["center", "radius"]
+    }
+    
+    for shape in shapes:
+        shape_type = shape.get("type")
+        if shape_type not in required_fields:
+            raise ValueError(f"Invalid shape type: {shape_type}")
+        
+        for field in required_fields[shape_type]:
+            if field not in shape:
+                raise ValueError(f"Missing required field '{field}' for {shape_type}")
+    
+    return True

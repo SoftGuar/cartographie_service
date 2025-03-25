@@ -9,7 +9,7 @@ class Floor(Base):
     environment_id = Column(String, ForeignKey("environments.id"))
     name = Column(String, nullable=False)
     building = Column(String)
-    level = Column(Integer)  # Changed from 'floor' to 'level' to avoid confusion
+    level = Column(Integer)  
     width = Column(Float)
     height = Column(Float)
     coordinates = Column(String)  # JSON string for SQLite compatibility
@@ -18,4 +18,4 @@ class Floor(Base):
     image_data = Column(LargeBinary, nullable=True)
     
     environment = relationship("Environment", back_populates="floors")
-    zones = relationship("Zone", back_populates="floor")
+    zones = relationship('Zone', back_populates='floor')
