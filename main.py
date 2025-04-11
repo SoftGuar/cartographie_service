@@ -1,4 +1,7 @@
 # main.py
+from collections import deque
+from contextlib import asynccontextmanager
+from datetime import datetime
 import os
 import cv2
 import numpy as np
@@ -11,6 +14,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 from inference_sdk import InferenceHTTPClient, InferenceConfiguration
+import socketio
+import asyncio
 import io
 import matplotlib.pyplot as plt
 import json
@@ -22,11 +27,38 @@ import binascii
 # Create all tables
 models.Base.metadata.create_all(bind=engine)
 
+# Store background tasks and connected clients
+background_tasks = set()
+connected_clients = set()
+position_buffer = {
+    'x': deque(maxlen=10),  # Keep last 10 positions for smoothing
+    'y': deque(maxlen=10),
+    'angle': deque(maxlen=10)
+}
+last_broadcast_time = datetime.now()
+broadcast_interval = 1.0  # seconds
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Create background task for position updates
+    task = asyncio.create_task(send_position_updates())
+    background_tasks.add(task)
+    
+    yield
+    
+    # Shutdown: Cancel all background tasks
+    for task in background_tasks:
+        task.cancel()
+    
+    # Wait for tasks to complete
+    await asyncio.gather(*background_tasks, return_exceptions=True)
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Floor Plan Processing API",
     description="API for detecting walls, doors, and furniture in floor plan images and converting to grid format",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Add CORS middleware to allow cross-origin requests from your frontend
@@ -37,6 +69,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Initialize Socket.IO with more permissive CORS
+sio = socketio.AsyncServer(
+    async_mode='asgi',
+    cors_allowed_origins=['http://localhost:5173'],  # Explicitly allow your frontend origin
+    logger=True,
+    engineio_logger=True,
+    ping_timeout=60,
+    ping_interval=25,
+)
+
+
+# Create ASGIApp with Socket.IO mounted at /ws
+socket_app = socketio.ASGIApp(
+    socketio_server=sio,
+    other_asgi_app=app,
+)
+
+# Store last known position
+last_position = {
+    'x': 100,
+    'y': 100,
+    'angle': 0,
+    'timestamp': datetime.now()
+}
+
+class PositionUpdate(BaseModel):
+    x: float
+    y: float
+    angle: float
+
+
 
 def validate_base64(image_data: str) -> bool:
     """Validate base64 image data"""
@@ -94,6 +158,7 @@ def get_rooms(db: Session = Depends(get_db)):
         }
     }
 )
+
 def create_room(room: schemas.RoomCreate, db: Session = Depends(get_db)):
     # Validate base64 image data
     if room.image_data and not validate_base64(room.image_data):
@@ -246,9 +311,79 @@ def get_room_image(room_id: str, db: Session = Depends(get_db)):
 
 
 
+def get_smoothed_position():
+    """Calculate smoothed position from buffer"""
+    if not position_buffer['x']:
+        return {'x': 100, 'y': 100, 'angle': 0}
+    
+    return {
+        'x': sum(position_buffer['x']) / len(position_buffer['x']),
+        'y': sum(position_buffer['y']) / len(position_buffer['y']),
+        'angle': sum(position_buffer['angle']) / len(position_buffer['angle'])
+    }
+
+class PositionUpdate(BaseModel):
+    x: float
+    y: float
+    angle: float
 
 
 
+@app.post("/update_position")
+async def update_position(position: PositionUpdate):
+    """Handle position updates from external sources"""
+    try:
+        # Add new position to buffer
+        position_buffer['x'].append(position.x)
+        position_buffer['y'].append(position.y)
+        position_buffer['angle'].append(position.angle)
+        
+        return {"status": "success"}
+    except Exception as e:
+        print(f"Error handling position update: {e}")
+        return {"status": "error", "message": str(e)}
+
+@sio.event
+async def connect(sid, environ):
+    """Handle client connection"""
+    print(f"Client connected: {sid}")
+    connected_clients.add(sid)
+    
+    try:
+        # Send current position to newly connected client
+        current_position = get_smoothed_position()
+        await sio.emit('position_update', current_position, room=sid)
+    except Exception as e:
+        print(f"Error sending initial position: {e}")
+
+@sio.event
+async def disconnect(sid):
+    """Handle client disconnection"""
+    if sid in connected_clients:
+        connected_clients.remove(sid)
+    print(f"Client disconnected: {sid}")
+
+async def send_position_updates():
+    """Background task to periodically send position updates"""
+    global last_broadcast_time
+    
+    while True:
+        try:
+            current_time = datetime.now()
+            if (current_time - last_broadcast_time).total_seconds() >= broadcast_interval:
+                if connected_clients:  # Only broadcast if there are connected clients
+                    smoothed_position = get_smoothed_position()
+                    await sio.emit('position_update', smoothed_position)
+                    print(f"Broadcast position update: {smoothed_position}")
+                last_broadcast_time = current_time
+            
+            await asyncio.sleep(0.1)  # Small sleep to prevent CPU overuse
+        except asyncio.CancelledError:
+            print("Position update task cancelled")
+            break
+        except Exception as e:
+            print(f"Error in position updates: {e}")
+            await asyncio.sleep(1)  # Longer sleep on error
 
 
 
@@ -949,7 +1084,15 @@ async def root():
     """API status endpoint."""
     return {"status": "Floor Plan Processing API is running"}
 
+
 # Run the server with uvicorn
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(
+        socket_app,
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info",
+        access_log=True
+    )

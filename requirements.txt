@@ -18,3 +18,5 @@ httpx
 selenium
 webdriver-manager
 pytest-cov
+python-socketio
+aiohttp
