@@ -23,6 +23,8 @@ import models
 import schemas
 from database import engine, get_db
 import binascii
+import uuid
+from fastapi import Path as PathParam
 
 # Create all tables
 models.Base.metadata.create_all(bind=engine)
@@ -137,7 +139,14 @@ def get_rooms(db: Session = Depends(get_db)):
         # Convert image data to base64 if present
         if room.image_data:
             room.image_data = "data:image/png;base64," + base64.b64encode(room.image_data).decode('utf-8')
-    
+        # Deserialize POIs for the room
+        for poi in room.points_of_interest:
+            poi.coordinates = json.loads(poi.coordinates) if poi.coordinates else None
+        # Deserialize zones
+        for zone in room.zones:
+            zone.shapes = json.loads(zone.shapes) if zone.shapes else []
+            zone.properties = json.loads(zone.properties) if zone.properties else {}
+        
     return rooms
 
 @app.post(
@@ -288,6 +297,14 @@ def get_room(room_id: str, db: Session = Depends(get_db)):
     # Convert image data to base64 if present
     if room.image_data:
         room.image_data = "data:image/png;base64," + base64.b64encode(room.image_data).decode('utf-8')
+    # Deserialize POIs for the room
+    for poi in room.points_of_interest:
+        poi.coordinates = json.loads(poi.coordinates) if poi.coordinates else None
+    # Deserialize zones
+    for zone in room.zones:
+        zone.shapes = json.loads(zone.shapes) if zone.shapes else []
+        zone.properties = json.loads(zone.properties) if zone.properties else {}
+    
     return room
 
 @app.get(
@@ -384,6 +401,374 @@ async def send_position_updates():
         except Exception as e:
             print(f"Error in position updates: {e}")
             await asyncio.sleep(1)  # Longer sleep on error
+
+
+
+# ==================== ZONES API ENDPOINTS ====================
+
+@app.get(
+    "/rooms/{room_id}/zones/",
+    response_model=List[schemas.Zone],
+    tags=["Zones"],
+    summary="Get all zones for a room",
+    description="Retrieve a list of all zones defined for a specific room.",
+    responses={404: {"description": "Room not found"}}
+)
+def get_zones(room_id: str = PathParam(..., description="ID of the room"), db: Session = Depends(get_db)):
+    """Get all zones for a specific room"""
+    # Check if room exists
+    room = db.query(models.Room).filter(models.Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    # Get zones
+    zones = db.query(models.Zone).filter(models.Zone.room_id == room_id).all()
+    
+    # Convert JSON strings back to objects for each zone
+    for zone in zones:
+        zone.shapes = json.loads(zone.shapes) if zone.shapes else []
+        zone.properties = json.loads(zone.properties) if zone.properties else {}
+    
+    return zones
+
+@app.post(
+    "/rooms/{room_id}/zones/",
+    response_model=schemas.Zone,
+    tags=["Zones"],
+    summary="Create a new zone",
+    description="Create a new zone within a specific room.",
+    responses={
+        404: {"description": "Room not found"},
+        400: {"description": "Invalid zone data"}
+    }
+)
+def create_zone(
+    zone: schemas.ZoneCreate,
+    room_id: str = PathParam(..., description="ID of the room"),
+    db: Session = Depends(get_db)
+):
+    """Create a new zone in a room"""
+    # Check if room exists
+    room = db.query(models.Room).filter(models.Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    # Ensure room_id in path matches the one in the request body
+    if zone.room_id != room_id:
+        raise HTTPException(status_code=400, detail="Room ID in path must match room_id in request body")
+    
+    # Generate UUID for new zone if not provided
+    zone_data = zone.dict()
+    if not zone_data.get('id'):
+        zone_data['id'] = str(uuid.uuid4())
+    
+    # Convert objects to JSON strings for SQLite storage
+    zone_data['shapes'] = json.dumps(zone_data['shapes'])
+    zone_data['properties'] = json.dumps(zone_data['properties'])
+    
+    # Create new zone
+    db_zone = models.Zone(**zone_data)
+    db.add(db_zone)
+    
+    try:
+        db.commit()
+        db.refresh(db_zone)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    # Convert JSON strings back to objects for response
+    db_zone.shapes = json.loads(db_zone.shapes) if db_zone.shapes else []
+    db_zone.properties = json.loads(db_zone.properties) if db_zone.properties else {}
+    
+    return db_zone
+
+@app.get(
+    "/rooms/{room_id}/zones/{zone_id}",
+    response_model=schemas.Zone,
+    tags=["Zones"],
+    summary="Get a specific zone",
+    description="Retrieve details of a specific zone by its ID.",
+    responses={404: {"description": "Zone not found"}}
+)
+def get_zone(
+    room_id: str = PathParam(..., description="ID of the room"),
+    zone_id: str = PathParam(..., description="ID of the zone"),
+    db: Session = Depends(get_db)
+):
+    """Get a specific zone"""
+    zone = db.query(models.Zone).filter(
+        models.Zone.id == zone_id,
+        models.Zone.room_id == room_id
+    ).first()
+    
+    if not zone:
+        raise HTTPException(status_code=404, detail="Zone not found")
+    
+    # Convert JSON strings back to objects
+    zone.shapes = json.loads(zone.shapes) if zone.shapes else []
+    zone.properties = json.loads(zone.properties) if zone.properties else {}
+    
+    return zone
+
+@app.put(
+    "/rooms/{room_id}/zones/{zone_id}",
+    response_model=schemas.Zone,
+    tags=["Zones"],
+    summary="Update a zone",
+    description="Update an existing zone's data.",
+    responses={404: {"description": "Zone not found"}}
+)
+def update_zone(
+    zone_update: schemas.ZoneUpdate,
+    room_id: str = PathParam(..., description="ID of the room"),
+    zone_id: str = PathParam(..., description="ID of the zone"),
+    db: Session = Depends(get_db)
+):
+    """Update a zone"""
+    db_zone = db.query(models.Zone).filter(
+        models.Zone.id == zone_id,
+        models.Zone.room_id == room_id
+    ).first()
+    
+    if not db_zone:
+        raise HTTPException(status_code=404, detail="Zone not found")
+    
+    # Update zone data
+    update_data = zone_update.dict()
+    
+    # Convert objects to JSON strings for SQLite storage
+    db_zone.name = update_data['name']
+    db_zone.shapes = json.dumps(update_data['shapes'])
+    db_zone.color = update_data['color']
+    db_zone.properties = json.dumps(update_data['properties'])
+    
+    try:
+        db.commit()
+        db.refresh(db_zone)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    # Convert JSON strings back to objects for response
+    db_zone.shapes = json.loads(db_zone.shapes) if db_zone.shapes else []
+    db_zone.properties = json.loads(db_zone.properties) if db_zone.properties else {}
+    
+    return db_zone
+
+@app.delete(
+    "/rooms/{room_id}/zones/{zone_id}",
+    tags=["Zones"],
+    summary="Delete a zone",
+    description="Delete a specific zone from a room.",
+    responses={
+        200: {"description": "Zone successfully deleted"},
+        404: {"description": "Zone not found"}
+    }
+)
+def delete_zone(
+    room_id: str = PathParam(..., description="ID of the room"),
+    zone_id: str = PathParam(..., description="ID of the zone"),
+    db: Session = Depends(get_db)
+):
+    """Delete a zone"""
+    db_zone = db.query(models.Zone).filter(
+        models.Zone.id == zone_id,
+        models.Zone.room_id == room_id
+    ).first()
+    
+    if not db_zone:
+        raise HTTPException(status_code=404, detail="Zone not found")
+    
+    try:
+        db.delete(db_zone)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    return {"message": "Zone deleted successfully"}
+
+# ==================== POINTS OF INTEREST API ENDPOINTS ====================
+
+@app.get(
+    "/rooms/{room_id}/pois/",
+    response_model=List[schemas.PointOfInterest],
+    tags=["Points of Interest"],
+    summary="Get all points of interest for a room",
+    description="Retrieve a list of all points of interest defined for a specific room.",
+    responses={404: {"description": "Room not found"}}
+)
+def get_pois(room_id: str = PathParam(..., description="ID of the room"), db: Session = Depends(get_db)):
+    """Get all points of interest for a specific room"""
+    # Check if room exists
+    room = db.query(models.Room).filter(models.Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    # Get POIs
+    pois = db.query(models.PointOfInterest).filter(models.PointOfInterest.room_id == room_id).all()
+    
+    # Convert JSON strings back to objects for each POI
+    for poi in pois:
+        poi.coordinates = json.loads(poi.coordinates) if poi.coordinates else []
+    
+    return pois
+
+@app.post(
+    "/rooms/{room_id}/pois/",
+    response_model=schemas.PointOfInterest,
+    tags=["Points of Interest"],
+    summary="Create a new point of interest",
+    description="Create a new point of interest within a specific room.",
+    responses={
+        404: {"description": "Room not found"},
+        400: {"description": "Invalid POI data"}
+    }
+)
+def create_poi(
+    poi: schemas.PointOfInterestCreate,
+    room_id: str = PathParam(..., description="ID of the room"),
+    db: Session = Depends(get_db)
+):
+    """Create a new point of interest in a room"""
+    # Check if room exists
+    room = db.query(models.Room).filter(models.Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    # Ensure room_id in path matches the one in the request body
+    if poi.room_id != room_id:
+        raise HTTPException(status_code=400, detail="Room ID in path must match room_id in request body")
+    
+    # Generate UUID for new POI if not provided
+    poi_data = poi.dict()
+    if not poi_data.get('id'):
+        poi_data['id'] = str(uuid.uuid4())
+    
+    # Convert objects to JSON strings for SQLite storage
+    poi_data['coordinates'] = json.dumps(poi_data['coordinates'])
+    
+    # Create new POI
+    db_poi = models.PointOfInterest(**poi_data)
+    db.add(db_poi)
+    
+    try:
+        db.commit()
+        db.refresh(db_poi)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    # Convert JSON strings back to objects for response
+    db_poi.coordinates = json.loads(db_poi.coordinates) if db_poi.coordinates else []
+    
+    return db_poi
+
+@app.get(
+    "/rooms/{room_id}/pois/{poi_id}",
+    response_model=schemas.PointOfInterest,
+    tags=["Points of Interest"],
+    summary="Get a specific point of interest",
+    description="Retrieve details of a specific point of interest by its ID.",
+    responses={404: {"description": "Point of interest not found"}}
+)
+def get_poi(
+    room_id: str = PathParam(..., description="ID of the room"),
+    poi_id: str = PathParam(..., description="ID of the point of interest"),
+    db: Session = Depends(get_db)
+):
+    """Get a specific point of interest"""
+    poi = db.query(models.PointOfInterest).filter(
+        models.PointOfInterest.id == poi_id,
+        models.PointOfInterest.room_id == room_id
+    ).first()
+    
+    if not poi:
+        raise HTTPException(status_code=404, detail="Point of interest not found")
+    
+    # Convert JSON strings back to objects
+    poi.coordinates = json.loads(poi.coordinates) if poi.coordinates else []
+    
+    return poi
+
+@app.put(
+    "/rooms/{room_id}/pois/{poi_id}",
+    response_model=schemas.PointOfInterest,
+    tags=["Points of Interest"],
+    summary="Update a point of interest",
+    description="Update an existing point of interest's data.",
+    responses={404: {"description": "Point of interest not found"}}
+)
+def update_poi(
+    poi_update: schemas.PointOfInterestUpdate,
+    room_id: str = PathParam(..., description="ID of the room"),
+    poi_id: str = PathParam(..., description="ID of the point of interest"),
+    db: Session = Depends(get_db)
+):
+    """Update a point of interest"""
+    db_poi = db.query(models.PointOfInterest).filter(
+        models.PointOfInterest.id == poi_id,
+        models.PointOfInterest.room_id == room_id
+    ).first()
+    
+    if not db_poi:
+        raise HTTPException(status_code=404, detail="Point of interest not found")
+    
+    # Update POI data
+    update_data = poi_update.dict()
+    
+    # Convert objects to JSON strings for SQLite storage
+    db_poi.name = update_data['name']
+    db_poi.coordinates = json.dumps(update_data['coordinates'])
+    
+    try:
+        db.commit()
+        db.refresh(db_poi)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    # Convert JSON strings back to objects for response
+    db_poi.coordinates = json.loads(db_poi.coordinates) if db_poi.coordinates else []
+    
+    return db_poi
+
+@app.delete(
+    "/rooms/{room_id}/pois/{poi_id}",
+    tags=["Points of Interest"],
+    summary="Delete a point of interest",
+    description="Delete a specific point of interest from a room.",
+    responses={
+        200: {"description": "Point of interest successfully deleted"},
+        404: {"description": "Point of interest not found"}
+    }
+)
+def delete_poi(
+    room_id: str = PathParam(..., description="ID of the room"),
+    poi_id: str = PathParam(..., description="ID of the point of interest"),
+    db: Session = Depends(get_db)
+):
+    """Delete a point of interest"""
+    db_poi = db.query(models.PointOfInterest).filter(
+        models.PointOfInterest.id == poi_id,
+        models.PointOfInterest.room_id == room_id
+    ).first()
+    
+    if not db_poi:
+        raise HTTPException(status_code=404, detail="Point of interest not found")
+    
+    try:
+        db.delete(db_poi)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    return {"message": "Point of interest deleted successfully"}
+
+
+
 
 
 
