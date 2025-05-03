@@ -5,6 +5,7 @@ from api.endpoints.floors import router as floor_router
 from api.endpoints.environments import router as environment_router
 from api.endpoints.zones import router as zone_router
 from api.endpoints.pois import router as poi_router
+from api.endpoints.navigation import router as navigation_router
 from database import Base, engine
 
 # Import all models to ensure they are included in the database
@@ -22,7 +23,7 @@ Base.metadata.create_all(bind=engine)
 # Create the FastAPI app
 app = FastAPI(
     title="Floor Plan Processing API",
-    description="API for detecting walls, doors, and furniture in floor plan images and converting to grid format",
+    description="API for processing floor plans, indoor navigation, and POI management",
     version="1.0.0"
 )
 
@@ -35,12 +36,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include the floor plan processing router
+# Include all routers
 app.include_router(floor_plan_router)
 app.include_router(floor_router)
 app.include_router(environment_router)
 app.include_router(zone_router)
 app.include_router(poi_router)
+app.include_router(navigation_router)
 
 @app.get("/")
 async def root():
