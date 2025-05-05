@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from models.poi import POI
+from models.point import Point
 from models.zone import Zone
 from schemas.poi import POICreate, POIUpdate
 
@@ -43,6 +44,7 @@ def get_pois_by_floor(db: Session, floor_id: str):
     return (
         db.query(POI)
         .join(Zone, POI.zones)
+        .join(Point, POI.point_id == Point.id)
         .filter(Zone.floor_id == floor_id)
         .all()
     )

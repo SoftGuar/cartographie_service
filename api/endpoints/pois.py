@@ -4,6 +4,7 @@ from typing import List
 
 from database import get_db
 from models.poi import POI
+from models.zone import Zone
 from schemas.poi import POICreate, POIUpdate, POIResponse
 from schemas.Category import CategoryResponse  # Import the response schema
 from services.poi_service import (
@@ -27,11 +28,27 @@ def create_poi_endpoint(poi: POICreate, db: Session = Depends(get_db)):
     new_point = create_point(db, poi.x, poi.y)
 
     # Prepare POI data without x and y
-    poi_data = poi.dict(exclude={"x", "y"})
+    poi_data = poi.dict(exclude={"x", "y", "zone_id", "floor_id"})
     poi_data["point_id"] = new_point.id
+    # Handle zone association
+    if poi.zone_id:
+        # Check if the provided zone_id exists
+        zone = db.query(Zone).filter(Zone.id == poi.zone_id).first()
+        if not zone:
+            raise HTTPException(status_code=404, detail="Zone not found")
+    else:
+        # Find the default zone for the floor
+        zone = db.query(Zone).filter(
+            Zone.floor_id == poi.floor_id, Zone.name == "Default Zone"
+        ).first()
+        if not zone:
+            raise HTTPException(status_code=500, detail="Default zone not found for the floor")
 
-    # Create the POI
-    return create_poi(db, poi_data)
+    # Associate the POI with the zone
+    db_poi = create_poi(db, poi_data)
+    db_poi.zones.append(zone)
+    db.commit()
+    return db_poi
 
 
 @router.get("/categories", response_model=List[CategoryResponse])
@@ -75,7 +92,16 @@ def search_pois_endpoint(query: str, db: Session = Depends(get_db)):
 def get_pois_by_floor_endpoint(floor_id: str, db: Session = Depends(get_db)):
     """Get all POIs for a specific floor."""
     pois = get_pois_by_floor(db, floor_id)
-    if pois is None:
+    if not pois:
         raise HTTPException(status_code=404, detail="No POIs found for the specified floor")
-    return pois
-
+    return [
+        {
+            "id": poi.id,
+            "name": poi.name,
+            "description": poi.description,
+            "category_id": poi.category_id,
+            "x": poi.point.x,  # Access x from the related Point object
+            "y": poi.point.y   # Access y from the related Point object
+        }
+        for poi in pois
+    ]

@@ -6,6 +6,7 @@ import base64
 import uuid
 import binascii
 from models.floor import Floor
+from models.zone import Zone
 from schemas.floor import FloorCreate, FloorUpdate, FloorResponse , FloorResponseWithImage
 from database import get_db
 from utils.validation import validate_base64
@@ -98,6 +99,18 @@ def create_floor(floor: FloorCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     
+     # Create a default zone for the floor
+    default_zone = Zone(
+        id=str(uuid.uuid4()),
+        name="Default Zone",
+        color="#FFFFFF",
+        type_id="default",  # Use a predefined type for default zones
+        shape={"type": "rectangle", "coordinates": [[0, 0], [floor.width, floor.height]]},
+        floor_id=db_floor.id
+    )
+    db.add(default_zone)
+    db.commit()
+
     # Convert JSON strings back to objects for response
     db_floor.coordinates = json.loads(db_floor.coordinates)
     db_floor.grid_data = json.loads(db_floor.grid_data)
