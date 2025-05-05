@@ -8,9 +8,13 @@ class POIBase(BaseModel):
     category_id: str  # Reference to Category
     point_id: str  # Reference to Point
 
-class POICreate(POIBase):
+class POICreate(BaseModel):
     """Schema for creating a POI."""
-    pass
+    name: str
+    description: Optional[str] = None
+    category_id: str  # Reference to Category
+    x: float  # X coordinate for the Point
+    y: float  # Y coordinate for the Point
 
 class POIUpdate(BaseModel):
     """Schema for updating a POI."""

@@ -6,7 +6,7 @@ import base64
 import uuid
 import binascii
 from models.floor import Floor
-from schemas.floor import FloorCreate, FloorUpdate, FloorResponse
+from schemas.floor import FloorCreate, FloorUpdate, FloorResponse , FloorResponseWithImage
 from database import get_db
 from utils.validation import validate_base64
 
@@ -109,7 +109,7 @@ def create_floor(floor: FloorCreate, db: Session = Depends(get_db)):
 
 @router.put(
     "/{floor_id}",
-    response_model=FloorResponse,
+    response_model=FloorResponseWithImage,
     summary="Update a floor",
     description="Update an existing floor's grid data and image.",
     responses={
@@ -159,7 +159,7 @@ def update_floor(floor_id: str, floor_update: FloorUpdate, db: Session = Depends
 
 @router.get(
     "/{floor_id}",
-    response_model=FloorResponse,
+    response_model=FloorResponseWithImage,
     summary="Get a specific floor",
     description="Retrieve details of a specific floor by its ID.",
     responses={404: {"description": "Floor not found"}}

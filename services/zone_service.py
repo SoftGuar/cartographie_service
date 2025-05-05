@@ -2,6 +2,8 @@ from sqlalchemy.orm import Session
 from models.zone import Zone
 from schemas.zone import ZoneCreate, ZoneUpdate
 import uuid
+from models.zone_type import ZoneType
+
 
 def create_zone(db: Session, zone: ZoneCreate):
     """Create a new zone."""
@@ -59,3 +61,7 @@ def validate_zone_shapes(shapes: list[dict]) -> bool:
                 raise ValueError(f"Missing required field '{field}' for {shape_type}")
     
     return True
+
+def get_all_zone_types(db: Session):
+    """Retrieve all ZoneTypes."""
+    return db.query(ZoneType).all()

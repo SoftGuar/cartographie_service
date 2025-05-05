@@ -5,7 +5,7 @@ import json
 # ------ Individual Shape Types ------
 class PolygonShape(BaseModel):
     type: Literal["polygon"]
-    coordinates: List[List[List[float]]]  # [[[x,y], [x,y], ...]]
+    coordinates: List[List[float]]  # [[x, y], [x, y], ...]  # [[[x,y], [x,y], ...]]
 
 class RectangleShape(BaseModel):
     type: Literal["rectangle"] 

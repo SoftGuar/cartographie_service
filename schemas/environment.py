@@ -6,8 +6,10 @@ class EnvironmentBase(BaseModel):
     name: str
     address: str
 
+
+
 class EnvironmentCreate(EnvironmentBase):
-    id: str
+    pass
 
 class Environment(EnvironmentBase):
     id: str

@@ -52,8 +52,13 @@ class FloorResponse(FloorBase):
     id: str
     grid_data: Optional[List[List[int]]] = None
     grid_dimensions: Optional[List[int]] = None
-    image_data: Optional[str] = None
     zones: List[ZoneResponse] = Field(default_factory=list)
     
     class Config:
         from_attributes = True  
+
+class FloorResponseWithImage(FloorResponse):
+    image_data: Optional[str] = None  # base64 or None
+
+    class Config:
+        from_attributes = True  # Use from_attributes to allow ORM to populate this field

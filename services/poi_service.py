@@ -1,10 +1,11 @@
 from sqlalchemy.orm import Session
 from models.poi import POI
+from models.zone import Zone
 from schemas.poi import POICreate, POIUpdate
 
-def create_poi(db: Session, poi: POICreate):
+def create_poi(db: Session, poi_data: dict):
     """Create a new POI."""
-    db_poi = POI(**poi.dict())
+    db_poi = POI(**poi_data)
     db.add(db_poi)
     db.commit()
     db.refresh(db_poi)
@@ -36,3 +37,12 @@ def delete_poi(db: Session, poi_id: str):
 def search_pois(db: Session, query: str):
     """Search for POIs by name or category."""
     return db.query(POI).filter(POI.name.ilike(f"%{query}%")).all()
+
+def get_pois_by_floor(db: Session, floor_id: str):
+    """Retrieve all POIs for a specific floor."""
+    return (
+        db.query(POI)
+        .join(Zone, POI.zones)
+        .filter(Zone.floor_id == floor_id)
+        .all()
+    )
