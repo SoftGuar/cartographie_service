@@ -23,7 +23,8 @@ class POIUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     category_id: Optional[str] = None
-    point_id: Optional[str] = None
+    x: Optional[float] = None  # X coordinate for the Point
+    y: Optional[float] = None  # Y coordinate for the Point
 
 class POIResponse(BaseModel):
     """Schema for returning a POI."""

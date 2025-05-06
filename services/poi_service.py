@@ -19,11 +19,25 @@ def get_poi(db: Session, poi_id: str):
 def update_poi(db: Session, poi_id: str, poi: POIUpdate):
     """Update a POI."""
     db_poi = db.query(POI).filter(POI.id == poi_id).first()
-    if db_poi:
-        for key, value in poi.dict().items():
+    if not db_poi:
+        return None
+
+    # Update the associated Point if x and y are provided
+    if poi.x is not None and poi.y is not None:
+        db_point = db.query(Point).filter(Point.id == db_poi.point_id).first()
+        if db_point:
+            db_point.x = poi.x
+            db_point.y = poi.y
+            db.commit()
+            db.refresh(db_point)
+
+    # Update the POI fields
+    for key, value in poi.dict(exclude={"x", "y"}).items():
+        if value is not None:
             setattr(db_poi, key, value)
-        db.commit()
-        db.refresh(db_poi)
+
+    db.commit()
+    db.refresh(db_poi)
     return db_poi
 
 def delete_poi(db: Session, poi_id: str):

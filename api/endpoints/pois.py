@@ -73,7 +73,16 @@ def update_poi_endpoint(poi_id: str, poi: POIUpdate, db: Session = Depends(get_d
     db_poi = update_poi(db, poi_id, poi)
     if not db_poi:
         raise HTTPException(status_code=404, detail="POI not found")
-    return db_poi
+
+    # Include x and y from the related Point object in the response
+    return {
+        "id": db_poi.id,
+        "name": db_poi.name,
+        "description": db_poi.description,
+        "category_id": db_poi.category_id,
+        "x": db_poi.point.x,  # Access x from the related Point object
+        "y": db_poi.point.y   # Access y from the related Point object
+    }
 
 @router.delete("/{poi_id}")
 def delete_poi_endpoint(poi_id: str, db: Session = Depends(get_db)):

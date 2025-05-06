@@ -23,11 +23,15 @@ def get_zone(db: Session, zone_id: str):
 def update_zone(db: Session, zone_id: str, zone: ZoneUpdate):
     """Update a zone."""
     db_zone = db.query(Zone).filter(Zone.id == zone_id).first()
-    if db_zone:
-        for key, value in zone.dict().items():
-            setattr(db_zone, key, value)
-        db.commit()
-        db.refresh(db_zone)
+    if not db_zone:
+        return None
+
+    # Update only the fields provided in the request body
+    for key, value in zone.dict(exclude_unset=True).items():
+        setattr(db_zone, key, value)
+
+    db.commit()
+    db.refresh(db_zone)
     return db_zone
 
 def delete_zone(db: Session, zone_id: str):
