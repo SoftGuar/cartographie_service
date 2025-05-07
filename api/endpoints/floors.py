@@ -99,13 +99,13 @@ def create_floor(floor: FloorCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     
-     # Create a default zone for the floor
+    # Create a default zone for the floor
     default_zone = Zone(
         id=str(uuid.uuid4()),
         name="Default Zone",
         color="#FFFFFF",
-        type_id="default",  # Use a predefined type for default zones
-        shape={"type": "rectangle", "coordinates": [[0, 0], [floor.width, floor.height]]},
+        type_id="1",  
+        shape=[{"type": "polygon", "coordinates": [[0, 0], [floor.width, floor.height]]}],  # Store shape as a list
         floor_id=db_floor.id
     )
     db.add(default_zone)

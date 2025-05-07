@@ -69,5 +69,21 @@ class ZoneUpdate(BaseModel):
 class ZoneResponse(ZoneBase):
     """Schema for returning a Zone."""
     id: str
+    name: str
+    color: str
+    type_id: str
+    shape: List[Union[PolygonShape, RectangleShape, CircleShape]]
+    floor_id: str
 
-    model_config = ConfigDict(from_attributes=True)
+    class Config:
+        orm_mode = True
+
+    @staticmethod
+    def serialize_shape(shape):
+        # Ensure the shape is serialized as a valid list
+        if isinstance(shape, str):
+            import json
+            return json.loads(shape)
+        return shape
+    
+    # model_config = ConfigDict(from_attributes=True)
