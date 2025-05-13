@@ -2,17 +2,24 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import declarative_base
 import os
+from dotenv import load_dotenv
 
-# Create the database directory if it doesn't exist
-os.makedirs('data', exist_ok=True)
+# Load environment variables
+load_dotenv()
 
-# Use SQLite with a file in the data directory
-SQLALCHEMY_DATABASE_URL = "sqlite:///data/indoor_mapping.db"
+# PostgreSQL connection parameters from environment variables
+DB_PARAMS = {
+    "dbname": os.getenv("DB_NAME"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "host": os.getenv("DB_HOST"),
+    "port": os.getenv("DB_PORT"),
+    "sslmode": os.getenv("DB_SSLMODE")
+}
 
-# Create engine with SQLite support for concurrent access
+# Create engine using connection parameters
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False}  # Needed for SQLite
+    "postgresql://{user}:{password}@{host}:{port}/{dbname}?sslmode={sslmode}".format(**DB_PARAMS)
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
