@@ -4,7 +4,7 @@ from typing import Optional, Dict
 class ZoneTypeBase(BaseModel):
     """Base schema for ZoneType."""
     name: str
-    properties: Dict  
+    properties: Optional[Dict] = None  
 
 class ZoneTypeCreate(ZoneTypeBase):
     """Schema for creating a ZoneType."""

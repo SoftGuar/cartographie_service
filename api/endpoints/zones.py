@@ -11,7 +11,9 @@ from services.zone_service import (
     update_zone,
     delete_zone,
     get_zones_by_floor,
+    get_all_zone_types
 )
+from schemas.zone_type import ZoneTypeResponse
 
 router = APIRouter(prefix="/zones", tags=["zones"])
 
@@ -19,6 +21,14 @@ router = APIRouter(prefix="/zones", tags=["zones"])
 def create_zone_endpoint(zone: ZoneCreate, db: Session = Depends(get_db)):
     """Create a new zone."""
     return create_zone(db, zone)
+
+@router.get("/types", response_model=List[ZoneTypeResponse])
+def get_zone_types_endpoint(db: Session = Depends(get_db)):
+    """Fetch all ZoneTypes."""
+    zone_types = get_all_zone_types(db)
+    if not zone_types:
+        raise HTTPException(status_code=404, detail="No ZoneTypes found")
+    return zone_types
 
 @router.get("/{zone_id}", response_model=ZoneResponse)
 def get_zone_endpoint(zone_id: str, db: Session = Depends(get_db)):

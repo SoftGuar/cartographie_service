@@ -6,7 +6,8 @@ import base64
 import uuid
 import binascii
 from models.floor import Floor
-from schemas.floor import FloorCreate, FloorUpdate, FloorResponse
+from models.zone import Zone
+from schemas.floor import FloorCreate, FloorUpdate, FloorResponse , FloorResponseWithImage
 from database import get_db
 from utils.validation import validate_base64
 
@@ -98,6 +99,18 @@ def create_floor(floor: FloorCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     
+    # Create a default zone for the floor
+    default_zone = Zone(
+        id=str(uuid.uuid4()),
+        name="Default Zone",
+        color="#FFFFFF",
+        type_id="1",  
+        shape=[{"type": "polygon", "coordinates": [[0, 0], [floor.width, floor.height]]}],  # Store shape as a list
+        floor_id=db_floor.id
+    )
+    db.add(default_zone)
+    db.commit()
+
     # Convert JSON strings back to objects for response
     db_floor.coordinates = json.loads(db_floor.coordinates)
     db_floor.grid_data = json.loads(db_floor.grid_data)
@@ -109,7 +122,7 @@ def create_floor(floor: FloorCreate, db: Session = Depends(get_db)):
 
 @router.put(
     "/{floor_id}",
-    response_model=FloorResponse,
+    response_model=FloorResponseWithImage,
     summary="Update a floor",
     description="Update an existing floor's grid data and image.",
     responses={
@@ -159,7 +172,7 @@ def update_floor(floor_id: str, floor_update: FloorUpdate, db: Session = Depends
 
 @router.get(
     "/{floor_id}",
-    response_model=FloorResponse,
+    response_model=FloorResponseWithImage,
     summary="Get a specific floor",
     description="Retrieve details of a specific floor by its ID.",
     responses={404: {"description": "Floor not found"}}

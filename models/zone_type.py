@@ -7,6 +7,6 @@ class ZoneType(Base):
 
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False)  # e.g., "Zone de circulation", "Zone de travail"
-    properties = Column(String)  # Store properties as a JSON string
+    properties = Column(JSON, nullable=True)  # Store properties as a JSON string
 
     zones = relationship("Zone", back_populates="zone_type")

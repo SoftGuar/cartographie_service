@@ -2,6 +2,8 @@ from sqlalchemy.orm import Session
 from models.zone import Zone
 from schemas.zone import ZoneCreate, ZoneUpdate
 import uuid
+from models.zone_type import ZoneType
+
 
 def create_zone(db: Session, zone: ZoneCreate):
     """Create a new zone."""
@@ -21,11 +23,15 @@ def get_zone(db: Session, zone_id: str):
 def update_zone(db: Session, zone_id: str, zone: ZoneUpdate):
     """Update a zone."""
     db_zone = db.query(Zone).filter(Zone.id == zone_id).first()
-    if db_zone:
-        for key, value in zone.dict().items():
-            setattr(db_zone, key, value)
-        db.commit()
-        db.refresh(db_zone)
+    if not db_zone:
+        return None
+
+    # Update only the fields provided in the request body
+    for key, value in zone.dict(exclude_unset=True).items():
+        setattr(db_zone, key, value)
+
+    db.commit()
+    db.refresh(db_zone)
     return db_zone
 
 def delete_zone(db: Session, zone_id: str):
@@ -59,3 +65,7 @@ def validate_zone_shapes(shapes: list[dict]) -> bool:
                 raise ValueError(f"Missing required field '{field}' for {shape_type}")
     
     return True
+
+def get_all_zone_types(db: Session):
+    """Retrieve all ZoneTypes."""
+    return db.query(ZoneType).all()
