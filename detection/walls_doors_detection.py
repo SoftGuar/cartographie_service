@@ -23,7 +23,7 @@ def get_walls_doors_bboxes(image_path):
 
     # Get walls bounding boxes
     with CLIENT.use_configuration(walls_doors_config):
-        walls_result = CLIENT.infer(image_path, model_id="sketch-detection-walls/1")
+        walls_result = CLIENT.infer(image_path, model_id="test-nsycv/1")
 
     walls_bboxes = []
     for prediction in walls_result["predictions"]:
