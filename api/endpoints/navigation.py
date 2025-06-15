@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional, Union
+from pydantic import BaseModel, Field, validator
 import math
 from database import get_db
 from services.navigation_service import NavigationService
@@ -9,20 +9,33 @@ from services.navigation_service import NavigationService
 router = APIRouter()
 
 class NavigationRequest(BaseModel):
-    floor_id: str = Field(..., description="ID of the floor to navigate on")
-    poi_id: str = Field(..., description="ID of the destination POI")
-    start_x: float = Field(..., description="Starting X coordinate (column) in the grid", ge=0)
-    start_y: float = Field(..., description="Starting Y coordinate (row) in the grid", ge=0)
+    floor: str = Field(..., description="Name of the floor to navigate on")
+    poi: str = Field(..., description="Name of the destination POI")
+    poi1: Optional[str] = Field(None, description="Name of the starting POI (alternative to x_start/y_start)")
+    x_start: Optional[float] = Field(None, description="Starting X coordinate (column) in the grid", ge=0)
+    y_start: Optional[float] = Field(None, description="Starting Y coordinate (row) in the grid", ge=0)
     current_orientation: Optional[float] = Field(None, description="Current user orientation in degrees (0°=East, 90°=North, 180°=West, 270°=South)")
+
+    @validator('x_start', 'y_start')
+    def validate_coordinates(cls, v, values):
+        if 'poi1' in values and values['poi1'] is not None:
+            if v is not None:
+                raise ValueError("Cannot specify both poi1 and x_start/y_start")
+        return v
+
+    @validator('poi1')
+    def validate_poi1(cls, v, values):
+        if v is None and (values.get('x_start') is None or values.get('y_start') is None):
+            raise ValueError("Must specify either poi1 or both x_start and y_start")
+        return v
 
     class Config:
         from_attributes = True
         json_schema_extra = {
             "example": {
-                "floor_id": "floor-123",
-                "poi_id": "poi-456",
-                "start_x": 128.0,
-                "start_y": 48.0,
+                "floor": "Floor 1",
+                "poi": "Reception",
+                "poi1": "Entrance",
                 "current_orientation": 30.0
             }
         }
@@ -36,11 +49,7 @@ class ActionItem(BaseModel):
 class NavigationResponse(BaseModel):
     actions: List[ActionItem] = Field(..., description="List of navigation actions")
     total_actions: int = Field(..., description="Total number of actions")
-    estimated_distance: Optional[int] = Field(None, description="Estimated total distance in steps")
-    path_coordinates: List[Dict[str, int]] = Field(default=[], description="Complete path as x,y coordinates")
-    initial_orientation: float = Field(..., description="Initial facing direction in degrees (0°=East, 90°=North, 180°=West, 270°=South)")
-    initial_direction_name: str = Field(..., description="Human-readable initial direction (e.g., 'Northwest')")
-    
+
     class Config:
         from_attributes = True
         json_schema_extra = {
@@ -55,21 +64,9 @@ class NavigationResponse(BaseModel):
                         "type": "rotate",
                         "degrees": 45,
                         "message": "Turn 45° right to face west"
-                    },
-                    {
-                        "type": "move",
-                        "steps": 15,
-                        "message": "Move 15 steps west"
                     }
                 ],
-                "total_actions": 3,
-                "estimated_distance": 40,
-                "path_coordinates": [
-                    {"x": 10, "y": 5},
-                    {"x": 11, "y": 5}
-                ],
-                "initial_orientation": 135.0,
-                "initial_direction_name": "Northwest"
+                "total_actions": 2
             }
         }
 
@@ -97,14 +94,32 @@ def get_navigation_instructions(
     try:
         navigation_service = NavigationService(db)
         
-        # Convert float coordinates to integers (start_x is column, start_y is row)
-        start_pos = (int(round(request.start_y)), int(round(request.start_x)))
+        # Get floor ID from floor name
+        floor_id = navigation_service.get_floor_id_from_name(request.floor)
+        if not floor_id:
+            raise HTTPException(status_code=404, detail=f"Floor '{request.floor}' not found")
+            
+        # Get POI ID from POI name
+        poi_id = navigation_service.get_poi_id_from_name(request.poi)
+        if not poi_id:
+            raise HTTPException(status_code=404, detail=f"Destination POI '{request.poi}' not found")
         
-        print(f"Converted coordinates: ({request.start_x}, {request.start_y}) -> grid position {start_pos}")
+        # Determine start position
+        if request.poi1:
+            # Get start position from POI1
+            start_poi_id = navigation_service.get_poi_id_from_name(request.poi1)
+            if not start_poi_id:
+                raise HTTPException(status_code=404, detail=f"Starting POI '{request.poi1}' not found")
+            start_pos = navigation_service.get_poi_position(start_poi_id)
+        else:
+            # Use provided coordinates
+            start_pos = (int(round(request.y_start)), int(round(request.x_start)))
+        
+        print(f"Converted coordinates: {start_pos}")
         
         actions, path, path_initial_orientation = navigation_service.get_navigation_actions_with_path(
-            floor_id=request.floor_id,
-            poi_id=request.poi_id,
+            floor_id=floor_id,
+            poi_id=poi_id,
             start_pos=start_pos
         )
         
@@ -128,7 +143,7 @@ def get_navigation_instructions(
             
             # Add initial alignment rotation if significant
             if abs(initial_rotation) > 5:  # Only if rotation is > 5 degrees
-                direction_word = "left" if initial_rotation > 0 else "right"  # Fixed logic
+                direction_word = "left" if initial_rotation > 0 else "right"
                 final_actions.append({
                     "type": "rotate",
                     "degrees": abs(int(round(initial_rotation))),
@@ -138,11 +153,6 @@ def get_navigation_instructions(
         
         # Add the calculated path actions
         final_actions.extend(actions)
-        
-        # Calculate estimated total distance in steps
-        estimated_distance = sum(
-            action.get("steps", 0) for action in final_actions if action.get("type") == "move"
-        )
         
         # Convert to response format
         action_items = [
@@ -155,20 +165,9 @@ def get_navigation_instructions(
             for action in final_actions
         ]
         
-        # Convert path to coordinates (row, col) -> (x, y)
-        path_coordinates = [{"x": point[1], "y": point[0]} for point in path]
-        
-        # Get direction name
-        actual_initial_orientation = request.current_orientation if request.current_orientation is not None else path_initial_orientation
-        direction_name = navigation_service.get_direction_name(actual_initial_orientation)
-        
         return NavigationResponse(
             actions=action_items,
-            total_actions=len(action_items),
-            estimated_distance=estimated_distance,
-            path_coordinates=path_coordinates,
-            initial_orientation=actual_initial_orientation,
-            initial_direction_name=direction_name
+            total_actions=len(action_items)
         )
         
     except ValueError as e:
@@ -188,11 +187,11 @@ def get_detailed_navigation_path(
     """Get the complete detailed path through the maze"""
     try:
         navigation_service = NavigationService(db)
-        start_pos = (int(round(request.start_y)), int(round(request.start_x)))
+        start_pos = (int(round(request.y_start)), int(round(request.x_start)))
         
         # Get floor grid and POI position
-        grid, grid_dimensions = navigation_service.get_floor_grid(request.floor_id)
-        goal_pos = navigation_service.get_poi_position(request.poi_id)
+        grid, grid_dimensions = navigation_service.get_floor_grid(request.floor)
+        goal_pos = navigation_service.get_poi_position(request.poi)
         
         print(f"Getting detailed path from {start_pos} to {goal_pos}")
         
@@ -305,11 +304,11 @@ def debug_positions(
     """Debug endpoint to check position validity and grid data"""
     try:
         navigation_service = NavigationService(db)
-        start_pos = (int(round(request.start_y)), int(round(request.start_x)))
+        start_pos = (int(round(request.y_start)), int(round(request.x_start)))
         
         # Get grid and POI position
-        grid, grid_dimensions = navigation_service.get_floor_grid(request.floor_id)
-        goal_pos = navigation_service.get_poi_position(request.poi_id)
+        grid, grid_dimensions = navigation_service.get_floor_grid(request.floor)
+        goal_pos = navigation_service.get_poi_position(request.poi)
         
         rows, cols = len(grid), len(grid[0]) if grid else 0
         
@@ -342,10 +341,10 @@ def debug_positions(
         
         return {
             "request": {
-                "floor_id": request.floor_id,
-                "poi_id": request.poi_id,
-                "start_x": request.start_x,
-                "start_y": request.start_y
+                "floor": request.floor,
+                "poi": request.poi,
+                "x_start": request.x_start,
+                "y_start": request.y_start
             },
             "converted_positions": {
                 "start_grid_pos": {"row": start_pos[0], "col": start_pos[1]},
@@ -395,12 +394,12 @@ def get_navigation_with_debug(
     """Get navigation instructions with full debug information"""
     try:
         navigation_service = NavigationService(db)
-        start_pos = (int(round(request.start_y)), int(round(request.start_x)))
+        start_pos = (int(round(request.y_start)), int(round(request.x_start)))
         
         # Get navigation with full debug output
         actions, path, initial_orientation = navigation_service.get_navigation_actions_with_path(
-            floor_id=request.floor_id,
-            poi_id=request.poi_id,
+            floor_id=request.floor,
+            poi_id=request.poi,
             start_pos=start_pos
         )
         
@@ -411,8 +410,8 @@ def get_navigation_with_debug(
             )
         
         # Get additional debug information
-        grid, grid_dimensions = navigation_service.get_floor_grid(request.floor_id)
-        goal_pos = navigation_service.get_poi_position(request.poi_id)
+        grid, grid_dimensions = navigation_service.get_floor_grid(request.floor)
+        goal_pos = navigation_service.get_poi_position(request.poi)
         
         # Calculate estimated total distance in steps
         estimated_distance = sum(
@@ -491,11 +490,11 @@ def test_pathfinding_algorithms(
     """Test and compare different pathfinding approaches"""
     try:
         navigation_service = NavigationService(db)
-        start_pos = (int(round(request.start_y)), int(round(request.start_x)))
+        start_pos = (int(round(request.y_start)), int(round(request.x_start)))
         
         # Get grid and goal
-        grid, grid_dimensions = navigation_service.get_floor_grid(request.floor_id)
-        goal_pos = navigation_service.get_poi_position(request.poi_id)
+        grid, grid_dimensions = navigation_service.get_floor_grid(request.floor)
+        goal_pos = navigation_service.get_poi_position(request.poi)
         
         results = {}
         

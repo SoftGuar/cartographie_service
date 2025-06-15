@@ -5,6 +5,7 @@ from heapq import heappush, heappop
 from models.floor import Floor
 from models.poi import POI
 from models.point import Point
+from models.environment import Environment
 from sqlalchemy.orm import Session
 
 # Global configuration
@@ -657,3 +658,23 @@ class NavigationService:
         """Main function to get navigation actions from start position to POI"""
         actions, _, _ = self.get_navigation_actions_with_path(floor_id, poi_id, start_pos)
         return actions
+
+    def get_floor_id_from_name(self, floor_name: str) -> str:
+        """Get floor ID from name, only searching in the actions-test environment"""
+        floor = (
+            self.db.query(Floor)
+            .join(Environment)
+            .filter(Floor.name == floor_name)
+            .filter(Environment.name == "actions-test")
+            .first()
+        )
+        if not floor:
+            raise ValueError(f"Floor '{floor_name}' not found in actions-test environment")
+        return floor.id
+
+    def get_poi_id_from_name(self, poi_name: str) -> str:
+        """Get POI ID from name"""
+        poi = self.db.query(POI).filter(POI.name == poi_name).first()
+        if not poi:
+            raise ValueError(f"POI '{poi_name}' not found")
+        return poi.id
