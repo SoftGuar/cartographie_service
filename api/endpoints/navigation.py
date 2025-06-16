@@ -83,10 +83,11 @@ class NavigationDebugResponse(BaseModel):
 class ObstacleNavigationRequest(BaseModel):
     floor: str = Field(..., description="Name of the floor to navigate on")
     poi: str = Field(..., description="Name of the destination POI")
-    x: float = Field(..., description="Current X coordinate (column) in the grid", ge=0)
-    y: float = Field(..., description="Current Y coordinate (row) in the grid", ge=0)
-    distance: float = Field(..., description="Distance in cm to avoid obstacles in front")
+    x: float = Field(..., description="Current X coordinate in meters", ge=0)
+    y: float = Field(..., description="Current Y coordinate in meters", ge=0)
+    distance: float = Field(..., description="Distance in centimeters to avoid obstacles in front", ge=0)
     orientation: float = Field(..., description="Current user orientation in degrees (0°=East, 90°=North, 180°=West, 270°=South)")
+    environment: str = Field(default="actions-test", description="Environment name for logging purposes")
 
     class Config:
         from_attributes = True
@@ -94,10 +95,11 @@ class ObstacleNavigationRequest(BaseModel):
             "example": {
                 "floor": "Floor 1",
                 "poi": "Reception",
-                "x": 128.0,
-                "y": 48.0,
-                "distance": 100.0,
-                "orientation": 30.0
+                "x": 25.6,  # 25.6 meters
+                "y": 9.6,   # 9.6 meters
+                "distance": 100.0,  # 100 centimeters
+                "orientation": 30.0,
+                "environment": "actions-test"
             }
         }
 
@@ -603,7 +605,7 @@ def test_pathfinding_algorithms(
     "/navigate/obstacle", 
     response_model=NavigationResponse,
     summary="Get navigation instructions with obstacle avoidance",
-    description="Calculate navigation instructions avoiding obstacles in front of the user"
+    description="Calculate navigation instructions avoiding obstacles in front of the user. Coordinates are in meters, distance in centimeters."
 )
 def get_obstacle_navigation_instructions(
     request: ObstacleNavigationRequest,
@@ -623,14 +625,19 @@ def get_obstacle_navigation_instructions(
         if not poi_id:
             raise HTTPException(status_code=404, detail=f"Destination POI '{request.poi}' not found")
         
-        # Convert coordinates to integers
-        start_pos = (int(round(request.y)), int(round(request.x)))
+        # Convert meters to grid cells (1 grid cell = 20cm = 0.2 meters)
+        GRID_CELL_SIZE_METERS = 0.2
+        start_pos = (
+            int(round(request.y / GRID_CELL_SIZE_METERS)),  # Convert meters to grid rows
+            int(round(request.x / GRID_CELL_SIZE_METERS))   # Convert meters to grid columns
+        )
         
         # Get floor grid
         grid, grid_dimensions = navigation_service.get_floor_grid(floor_id)
         
-        # Convert distance from cm to grid cells (assuming 1 grid cell = 50cm)
-        grid_cells_distance = int(round(request.distance / 50))
+        # Convert distance from centimeters to grid cells (1 grid cell = 20cm)
+        GRID_CELL_SIZE_CM = 20
+        grid_cells_distance = int(round(request.distance / GRID_CELL_SIZE_CM))
         
         # Calculate the grid positions to avoid based on orientation
         # Convert orientation to radians
