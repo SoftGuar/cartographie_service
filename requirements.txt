@@ -22,3 +22,5 @@ webdriver-manager
 pytest-cov
 uvicorn 
 requests 
+psutil
+threading

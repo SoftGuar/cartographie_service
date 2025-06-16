@@ -17,7 +17,8 @@ from services.poi_service import (
 )
 from services.category_service import get_all_categories  
 from services.point_service import create_point  # Import the service to create a Point
-
+from utils.notifications import send_notification
+import threading
 
 router = APIRouter(prefix="/pois", tags=["pois"])
 
@@ -48,6 +49,14 @@ def create_poi_endpoint(poi: POICreate, db: Session = Depends(get_db)):
     db_poi = create_poi(db, poi_data)
     db_poi.zones.append(zone)
     db.commit()
+    threading.Thread(
+        target=send_notification,
+        args=(
+            {"name": db_poi.name},
+            "/notifications/notify/poi-created"
+        ),
+        daemon=True
+    ).start()
     return db_poi
 
 
@@ -73,7 +82,14 @@ def update_poi_endpoint(poi_id: str, poi: POIUpdate, db: Session = Depends(get_d
     db_poi = update_poi(db, poi_id, poi)
     if not db_poi:
         raise HTTPException(status_code=404, detail="POI not found")
-
+    threading.Thread(
+        target=send_notification,
+        args=(
+            {"name": db_poi.name},
+            "/notifications/notify/poi-updated"
+        ),
+        daemon=True
+    ).start()
     # Include x and y from the related Point object in the response
     return {
         "id": db_poi.id,
@@ -90,6 +106,14 @@ def delete_poi_endpoint(poi_id: str, db: Session = Depends(get_db)):
     success = delete_poi(db, poi_id)
     if not success:
         raise HTTPException(status_code=404, detail="POI not found")
+    threading.Thread(
+        target=send_notification,
+        args=(
+            {"id": poi_id},
+            "/notifications/notify/poi-deleted"
+        ),
+        daemon=True
+    ).start()
     return {"message": "POI deleted"}
 
 @router.get("/search", response_model=List[POIResponse])

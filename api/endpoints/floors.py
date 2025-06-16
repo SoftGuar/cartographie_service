@@ -10,6 +10,8 @@ from models.zone import Zone
 from schemas.floor import FloorCreate, FloorUpdate, FloorResponse , FloorResponseWithImage
 from database import get_db
 from utils.validation import validate_base64
+from utils.notifications import send_notification 
+import threading
 
 router = APIRouter(prefix="/floors", tags=["floors"])
 
@@ -117,7 +119,14 @@ def create_floor(floor: FloorCreate, db: Session = Depends(get_db)):
     db_floor.grid_dimensions = json.loads(db_floor.grid_dimensions)
     if db_floor.image_data:
         db_floor.image_data = "data:image/png;base64," + base64.b64encode(db_floor.image_data).decode('utf-8')
-    
+    threading.Thread(
+        target=send_notification,
+        args=(
+            {"floorName": db_floor.name, "environmentId": db_floor.environment_id},
+            "/notifications/notify/floor-created"
+        ),
+        daemon=True
+    ).start()
     return db_floor
 
 @router.put(
@@ -167,7 +176,15 @@ def update_floor(floor_id: str, floor_update: FloorUpdate, db: Session = Depends
         db_floor.coordinates = json.loads(db_floor.coordinates)
     if db_floor.image_data:
         db_floor.image_data = "data:image/png;base64," + base64.b64encode(db_floor.image_data).decode('utf-8')
-    
+        
+    threading.Thread(
+        target=send_notification,
+        args=(
+            {"id": db_floor.id},
+            "/notifications/notify/floor-updated"
+        ),
+        daemon=True
+    ).start()
     return db_floor
 
 @router.get(

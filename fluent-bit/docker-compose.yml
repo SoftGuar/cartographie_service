@@ -1,0 +1,13 @@
+services:
+  fluent-bit-cartographyService:
+    image: fluent/fluent-bit:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "2026:2026"
+    volumes:
+      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
+      - ./parsers.conf:/fluent-bit/etc/parsers.conf
+      - ../logs:/logs
+    restart: unless-stopped

@@ -3,7 +3,8 @@ from models.zone import Zone
 from schemas.zone import ZoneCreate, ZoneUpdate
 import uuid
 from models.zone_type import ZoneType
-
+from utils.notifications import send_notification
+import threading
 
 def create_zone(db: Session, zone: ZoneCreate):
     """Create a new zone."""
@@ -14,6 +15,14 @@ def create_zone(db: Session, zone: ZoneCreate):
     db.add(db_zone)
     db.commit()
     db.refresh(db_zone)
+    threading.Thread(
+        target=send_notification,
+        args=(
+            {"name": db_zone.name},
+            "/notifications/notify/zone-created"
+        ),
+        daemon=True
+    ).start()
     return db_zone
 
 def get_zone(db: Session, zone_id: str):
@@ -32,6 +41,14 @@ def update_zone(db: Session, zone_id: str, zone: ZoneUpdate):
 
     db.commit()
     db.refresh(db_zone)
+    threading.Thread(
+        target=send_notification,
+        args=(
+            {"name": db_zone.name},
+            "/notifications/notify/zone-updated"
+        ),
+        daemon=True
+    ).start()
     return db_zone
 
 def delete_zone(db: Session, zone_id: str):
@@ -41,6 +58,14 @@ def delete_zone(db: Session, zone_id: str):
         db.delete(db_zone)
         db.commit()
         return True
+    threading.Thread(
+        target=send_notification,
+        args=(
+            {"id": db_zone.id},
+            "/notifications/notify/zone-deleted"
+        ),
+        daemon=True
+    ).start()
     return False
 
 def get_zones_by_floor(db: Session, floor_id: str):
