@@ -7,6 +7,8 @@ from models.environment import Environment as EnvironmentModel  # Use the SQLAlc
 from schemas.environment import EnvironmentCreate, Environment  # Use Pydantic schemas for validation
 from schemas.floor import FloorResponse as Floor  # Assuming you have a Floor model
 from database import get_db
+from utils.notifications import send_notification 
+import threading
 
 router = APIRouter(prefix="/environments", tags=["environments"])
 
@@ -21,7 +23,10 @@ def create_environment(environment: EnvironmentCreate, db: Session = Depends(get
     db.add(db_environment)
     db.commit()
     db.refresh(db_environment)
-    
+    threading.Thread(
+        target=send_notification, 
+        args=({"name": db_environment.name}, "/notifications/notify/environment_created")
+    ).start()
     # Return the SQLAlchemy instance, which will be converted to the Pydantic schema
     return db_environment
 

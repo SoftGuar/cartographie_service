@@ -3,6 +3,8 @@ import time
 import socket
 import logging
 from logging.handlers import RotatingFileHandler
+from utils.executive_report import start_periodic_report_writer
+import asyncio
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -83,7 +85,10 @@ async def log_requests(request: Request, call_next):
         }
     )
     return response
-
+@app.on_event("startup")
+async def startup_event():
+    await start_periodic_report_writer()
+    
 # include routers
 app.include_router(floor_plan_router)
 app.include_router(floor_router)
