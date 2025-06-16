@@ -5,6 +5,12 @@ from pydantic import BaseModel, Field, validator
 import math
 from database import get_db
 from services.navigation_service import NavigationService
+from datetime import datetime
+from database_logs import get_logs_db, NavigationLogs, ZoneLogs, POILogs, DeviceUsageLogs
+from sqlalchemy import select
+from models.zone import Zone  # Make sure this import exists
+import json
+import uuid
 
 router = APIRouter()
 
@@ -609,9 +615,11 @@ def test_pathfinding_algorithms(
 )
 def get_obstacle_navigation_instructions(
     request: ObstacleNavigationRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    logs_db: Session = Depends(get_logs_db)
 ):
     """Get navigation instructions avoiding obstacles in front of the user"""
+    start_time = datetime.now()
     try:
         navigation_service = NavigationService(db)
         
@@ -711,6 +719,87 @@ def get_obstacle_navigation_instructions(
             )
             for action in final_actions
         ]
+
+        # Create navigation log
+        navigation_log = NavigationLogs(
+            user_id=1,  # Dummy user ID
+            environment_id="fc565856-5306-47e1-bf05-d37e1db7d508",  # Dummy environment ID
+            rerouting_count=0,
+            start_time=start_time,
+            end_time=datetime.now()
+        )
+        logs_db.add(navigation_log)
+        logs_db.flush()  # Get the ID without committing
+
+        # Create POI log
+        poi_log = POILogs(
+            navigation_id=navigation_log.id,
+            poi_id=int(uuid.UUID(str(poi_id)).int % (2**31)),  # Convert UUID to a 32-bit integer
+            visit_time=datetime.now()
+        )
+        logs_db.add(poi_log)
+
+        # Get all zones for this floor
+        zones = db.query(Zone).filter(Zone.floor_id == floor_id).all()
+        
+        # Check which zones the path passes through
+        zones_visited = []
+        for zone in zones:
+            # Get zone shape from JSON
+            shape = json.loads(zone.shape) if isinstance(zone.shape, str) else zone.shape
+            
+            # Check each shape in the zone
+            for shape_item in shape:
+                if shape_item['type'] == 'rectangle':
+                    # Convert rectangle coordinates to grid cells
+                    x1 = int(round(shape_item['x'] / GRID_CELL_SIZE_METERS))
+                    y1 = int(round(shape_item['y'] / GRID_CELL_SIZE_METERS))
+                    x2 = int(round((shape_item['x'] + shape_item['width']) / GRID_CELL_SIZE_METERS))
+                    y2 = int(round((shape_item['y'] + shape_item['height']) / GRID_CELL_SIZE_METERS))
+                    
+                    # Check if any point in the path is within this rectangle
+                    for path_point in path:
+                        if (y1 <= path_point[0] <= y2 and 
+                            x1 <= path_point[1] <= x2):
+                            zones_visited.append(zone)
+                            break
+                elif shape_item['type'] == 'circle':
+                    # Convert circle coordinates to grid cells
+                    center_x = int(round(shape_item['x'] / GRID_CELL_SIZE_METERS))
+                    center_y = int(round(shape_item['y'] / GRID_CELL_SIZE_METERS))
+                    radius = int(round(shape_item['radius'] / GRID_CELL_SIZE_METERS))
+                    
+                    # Check if any point in the path is within this circle
+                    for path_point in path:
+                        dx = path_point[1] - center_x
+                        dy = path_point[0] - center_y
+                        if (dx*dx + dy*dy) <= (radius*radius):
+                            zones_visited.append(zone)
+                            break
+        
+        # Create zone logs for each visited zone
+        for zone in zones_visited:
+            zone_log = ZoneLogs(
+                navigation_id=navigation_log.id,
+                zone_id=int(uuid.UUID(str(zone.id)).int % (2**31)),  # Convert UUID to a 32-bit integer
+                user_id=1,  # Dummy user ID
+                start_time=start_time,
+                end_time=datetime.now(),
+                obstacles_encountered=len(positions_to_avoid)
+            )
+            logs_db.add(zone_log)
+
+        # Create device usage log
+        device_log = DeviceUsageLogs(
+            dispositive_id=1,  # Dummy device ID
+            timestamp=datetime.now(),
+            battery_level=100,  # Dummy battery level
+            connected=True  # Dummy connection status
+        )
+        logs_db.add(device_log)
+
+        # Commit all logs
+        logs_db.commit()
         
         return NavigationResponse(
             actions=action_items,
@@ -718,6 +807,8 @@ def get_obstacle_navigation_instructions(
         )
         
     except ValueError as e:
+        logs_db.rollback()
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        logs_db.rollback()
         raise HTTPException(status_code=500, detail=f"Navigation error: {str(e)}")
