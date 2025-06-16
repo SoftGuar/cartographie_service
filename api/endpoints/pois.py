@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
+import uuid
 
 from database import get_db
 from models.poi import POI
 from models.zone import Zone
+from models.category import Category
 from schemas.poi import POICreate, POIUpdate, POIResponse
 from schemas.Category import CategoryResponse  # Import the response schema
 from services.poi_service import (
@@ -50,6 +52,18 @@ def create_poi_endpoint(poi: POICreate, db: Session = Depends(get_db)):
     db.commit()
     return db_poi
 
+@router.post("/categories", response_model=CategoryResponse)
+def create_category_endpoint(name: str, description: str = None, db: Session = Depends(get_db)):
+    """Create a new category."""
+    category = Category(
+        id=str(uuid.uuid4()),
+        name=name,
+        description=description
+    )
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+    return category
 
 @router.get("/categories", response_model=List[CategoryResponse])
 def get_categories_endpoint(db: Session = Depends(get_db)):

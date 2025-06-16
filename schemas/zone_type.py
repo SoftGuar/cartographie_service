@@ -1,10 +1,10 @@
-from pydantic import BaseModel
-from typing import Optional, Dict
+from pydantic import BaseModel, ConfigDict
+from typing import Optional, Dict, Any, Union
 
 class ZoneTypeBase(BaseModel):
     """Base schema for ZoneType."""
     name: str
-    properties: Optional[Dict] = None  
+    properties: Optional[Union[Dict[str, Any], None]] = None
 
 class ZoneTypeCreate(ZoneTypeBase):
     """Schema for creating a ZoneType."""
@@ -13,11 +13,13 @@ class ZoneTypeCreate(ZoneTypeBase):
 class ZoneTypeUpdate(BaseModel):
     """Schema for updating a ZoneType."""
     name: Optional[str] = None
-    properties: Optional[Dict] = None
+    properties: Optional[Union[Dict[str, Any], None]] = None
 
 class ZoneTypeResponse(ZoneTypeBase):
     """Schema for returning a ZoneType."""
     id: str
 
-    class Config:
-        orm_mode = True  
+    model_config = ConfigDict(
+        from_attributes=True,
+        arbitrary_types_allowed=True
+    )  

@@ -7,6 +7,7 @@ import uuid
 import binascii
 from models.floor import Floor
 from models.zone import Zone
+from models.zone_type import ZoneType
 from schemas.floor import FloorCreate, FloorUpdate, FloorResponse , FloorResponseWithImage
 from database import get_db
 from utils.validation import validate_base64
@@ -99,17 +100,36 @@ def create_floor(floor: FloorCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     
+    # get zone type named walkable get its id and put it in type_id
+    walkable_zone_type = db.query(ZoneType).filter(ZoneType.name == "walkable").first()
+    if walkable_zone_type:
+        type_id = walkable_zone_type.id
+    else:
+        raise HTTPException(status_code=404, detail="Walkable zone type not found")
+    
     # Create a default zone for the floor
     default_zone = Zone(
         id=str(uuid.uuid4()),
         name="Default Zone",
         color="#FFFFFF",
-        type_id="1",  
+        type_id=type_id,  
         shape=[{"type": "polygon", "coordinates": [[0, 0], [floor.width, floor.height]]}],  # Store shape as a list
         floor_id=db_floor.id
     )
     db.add(default_zone)
     db.commit()
+
+    # get all zones and print them here
+    zones = db.query(Zone).filter(Zone.floor_id == db_floor.id).all()
+    print("\nZones for floor:", db_floor.id)
+    for zone in zones:
+        print(f"Zone ID: {zone.id}")
+        print(f"Zone Name: {zone.name}")
+        print(f"Zone Type ID: {zone.type_id}")
+        print(f"Zone Color: {zone.color}")
+        print("---")
+
+    
 
     # Convert JSON strings back to objects for response
     db_floor.coordinates = json.loads(db_floor.coordinates)
@@ -208,3 +228,32 @@ def get_floor_image(floor_id: str, db: Session = Depends(get_db)):
     if not floor or not floor.image_data:
         raise HTTPException(status_code=404, detail="Image not found")
     return Response(content=floor.image_data, media_type="image/png")
+
+@router.delete(
+    "/{floor_id}",
+    summary="Delete a floor",
+    description="Delete a floor and all its associated zones.",
+    responses={
+        404: {"description": "Floor not found"},
+        500: {"description": "Internal server error"}
+    }
+)
+def delete_floor(floor_id: str, db: Session = Depends(get_db)):
+    """Delete a floor and all its associated zones."""
+    # First check if floor exists
+    floor = db.query(Floor).filter(Floor.id == floor_id).first()
+    if not floor:
+        raise HTTPException(status_code=404, detail="Floor not found")
+    
+    try:
+        # Delete all zones associated with this floor
+        db.query(Zone).filter(Zone.floor_id == floor_id).delete()
+        
+        # Delete the floor
+        db.delete(floor)
+        db.commit()
+        
+        return {"message": "Floor and associated zones deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error deleting floor: {str(e)}")
