@@ -605,7 +605,7 @@ class NavigationService:
             print(f"WARNING: {walkable_count/total_cells*100:.1f}% walkable seems very high!")
             print("This might be mostly empty space.")
 
-    def get_navigation_actions_with_path(self, floor_id: str, poi_id: str, start_pos: Tuple[int, int]) -> Tuple[List[dict], List[Tuple[int, int]], float]:
+    def get_navigation_actions_with_path(self, floor_id: str, poi_id: str, start_pos: Tuple[int, int], custom_grid: Optional[List[List[int]]] = None) -> Tuple[List[dict], List[Tuple[int, int]], float]:
         """Get navigation actions and the complete detailed path (not smoothed)"""
         try:
             print(f"\n=== NAVIGATION DEBUG ===")
@@ -614,7 +614,12 @@ class NavigationService:
             print(f"Start position: {start_pos}")
             
             # Get floor grid and POI position
-            grid, grid_dimensions = self.get_floor_grid(floor_id)
+            if custom_grid is None:
+                grid, grid_dimensions = self.get_floor_grid(floor_id)
+            else:
+                grid = custom_grid
+                grid_dimensions = (len(grid), len(grid[0]) if grid else 0)
+            
             goal_pos = self.get_poi_position(poi_id)
             
             print(f"\nGRID INFO:")

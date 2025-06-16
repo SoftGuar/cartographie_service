@@ -80,6 +80,27 @@ class NavigationDebugResponse(BaseModel):
     initial_direction_name: str
     debug_info: Dict[str, Any]
 
+class ObstacleNavigationRequest(BaseModel):
+    floor: str = Field(..., description="Name of the floor to navigate on")
+    poi: str = Field(..., description="Name of the destination POI")
+    x: float = Field(..., description="Current X coordinate (column) in the grid", ge=0)
+    y: float = Field(..., description="Current Y coordinate (row) in the grid", ge=0)
+    distance: float = Field(..., description="Distance in cm to avoid obstacles in front")
+    orientation: float = Field(..., description="Current user orientation in degrees (0°=East, 90°=North, 180°=West, 270°=South)")
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "floor": "Floor 1",
+                "poi": "Reception",
+                "x": 128.0,
+                "y": 48.0,
+                "distance": 100.0,
+                "orientation": 30.0
+            }
+        }
+
 @router.post(
     "/navigate", 
     response_model=NavigationResponse,
@@ -577,3 +598,119 @@ def test_pathfinding_algorithms(
         
     except Exception as e:
         return {"error": str(e)}
+
+@router.post(
+    "/navigate/obstacle", 
+    response_model=NavigationResponse,
+    summary="Get navigation instructions with obstacle avoidance",
+    description="Calculate navigation instructions avoiding obstacles in front of the user"
+)
+def get_obstacle_navigation_instructions(
+    request: ObstacleNavigationRequest,
+    db: Session = Depends(get_db)
+):
+    """Get navigation instructions avoiding obstacles in front of the user"""
+    try:
+        navigation_service = NavigationService(db)
+        
+        # Get floor ID from floor name
+        floor_id = navigation_service.get_floor_id_from_name(request.floor)
+        if not floor_id:
+            raise HTTPException(status_code=404, detail=f"Floor '{request.floor}' not found")
+            
+        # Get POI ID from POI name
+        poi_id = navigation_service.get_poi_id_from_name(request.poi)
+        if not poi_id:
+            raise HTTPException(status_code=404, detail=f"Destination POI '{request.poi}' not found")
+        
+        # Convert coordinates to integers
+        start_pos = (int(round(request.y)), int(round(request.x)))
+        
+        # Get floor grid
+        grid, grid_dimensions = navigation_service.get_floor_grid(floor_id)
+        
+        # Convert distance from cm to grid cells (assuming 1 grid cell = 50cm)
+        grid_cells_distance = int(round(request.distance / 50))
+        
+        # Calculate the grid positions to avoid based on orientation
+        # Convert orientation to radians
+        orientation_rad = math.radians(request.orientation)
+        
+        # Calculate the direction vector
+        dx = math.cos(orientation_rad)
+        dy = -math.sin(orientation_rad)  # Negative because y increases downward
+        
+        # Calculate the positions to avoid (4 squares in front)
+        positions_to_avoid = []
+        for i in range(4):  # 4 squares to avoid
+            # Calculate position at the specified distance
+            avoid_x = int(round(start_pos[1] + dx * (grid_cells_distance + i)))
+            avoid_y = int(round(start_pos[0] + dy * (grid_cells_distance + i)))
+            
+            # Add the position if it's within grid bounds
+            if 0 <= avoid_x < grid_dimensions[1] and 0 <= avoid_y < grid_dimensions[0]:
+                positions_to_avoid.append((avoid_y, avoid_x))
+        
+        # Mark these positions as obstacles in the grid
+        for pos in positions_to_avoid:
+            if 0 <= pos[0] < len(grid) and 0 <= pos[1] < len(grid[0]):
+                grid[pos[0]][pos[1]] = 1
+        
+        # Get navigation actions with the modified grid
+        actions, path, path_initial_orientation = navigation_service.get_navigation_actions_with_path(
+            floor_id=floor_id,
+            poi_id=poi_id,
+            start_pos=start_pos,
+            custom_grid=grid  # Pass the modified grid
+        )
+        
+        if not actions or not path:
+            raise HTTPException(
+                status_code=422, 
+                detail="No safe navigation path found. This could be due to obstacles blocking the route or invalid start/destination positions."
+            )
+        
+        # Handle initial orientation adjustment if provided
+        final_actions = []
+        if request.orientation is not None:
+            # Calculate rotation needed to align user's current orientation with path's initial orientation
+            initial_rotation = path_initial_orientation - request.orientation
+            
+            # Normalize to [-180, 180] for shortest rotation
+            while initial_rotation > 180:
+                initial_rotation -= 360
+            while initial_rotation <= -180:
+                initial_rotation += 360
+            
+            # Add initial alignment rotation if significant
+            if abs(initial_rotation) > 5:  # Only if rotation is > 5 degrees
+                direction_word = "left" if initial_rotation > 0 else "right"
+                final_actions.append({
+                    "type": "rotate",
+                    "degrees": abs(int(round(initial_rotation))),
+                    "message": f"Rotate {abs(int(round(initial_rotation)))}° {direction_word}"
+                })
+        
+        # Add the calculated path actions
+        final_actions.extend(actions)
+        
+        # Convert to response format
+        action_items = [
+            ActionItem(
+                type=action["type"],
+                steps=action.get("steps"),
+                degrees=action.get("degrees"),
+                message=action["message"]
+            )
+            for action in final_actions
+        ]
+        
+        return NavigationResponse(
+            actions=action_items,
+            total_actions=len(action_items)
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Navigation error: {str(e)}")
