@@ -7,7 +7,6 @@ This project provides a backend service for a cartography system. It exposes API
 ## Requirements
 
 - **Python**: `3.9`
-- **PostgreSQL**: A running instance is required for database access (can be local or cloud-hosted).
 - **Virtual environment** (optional but recommended)
 
 ---
