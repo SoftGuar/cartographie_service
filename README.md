@@ -35,7 +35,7 @@ This project provides a backend service for a cartography system. It exposes API
 ## ⚙Configuration
 create a ".env" file and paste in it the content you find in the ".env.example" file
 
-## 🚀 Running the Application
+## Running the Application
 
 To start the FastAPI server:
 
@@ -49,7 +49,7 @@ Then open your browser and go to:
 
 ---
 
-## 🧪 Testing
+## Testing
 
 To test the API endpoints, use:
 
