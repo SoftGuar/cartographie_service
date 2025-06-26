@@ -24,3 +24,4 @@ uvicorn
 requests 
 psutil
 threading
+python-json-logger
